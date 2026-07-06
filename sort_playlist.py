@@ -50,50 +50,74 @@ def _cache_path_for_album(album_id: str) -> Path:
     return CACHE_DIR / f"album-{safe}.json"
 
 
-def _resolve_ncm_cli() -> str:
-    """解析 ncm-cli 可执行路径。Windows 下 npm 全局装的是 .cmd shim,subprocess 不带 shell 时找不到。"""
-    found = shutil.which("ncm-cli") or shutil.which("ncm-cli.cmd")
-    if found:
-        return found
-    # 兜底:返回名字,让 shell=True 去查
-    return "ncm-cli"
+def _resolve_ncm_entry() -> list[str]:
+    """解析 ncm-cli 启动方式,返回 subprocess 可直接执行的 list。
+
+    Windows 下 npm 全局装的是 .cmd shim,subprocess 不带 shell 时找不到 .cmd;
+    带 shell=True 又会经 cmd.exe,而 cmd.exe 命令行长度上限 8191 字符,
+    reorder 时 378 个 encId 拼成 14K 字符的命令会被 cmd.exe 拒绝(报"命令行太长")。
+
+    解决:直接调 node 启动 .cmd shim 内部指向的 dist/index.js,绕开 cmd.exe。
+    .cmd 内容: node "%dp0%\node_modules\@music163\ncm-cli\dist\index.js" %*
+    """
+    if os.name != "nt":
+        return ["ncm-cli"]
+
+    # 找 ncm-cli.cmd 所在目录
+    shim = shutil.which("ncm-cli.cmd") or shutil.which("ncm-cli")
+    if not shim:
+        return ["ncm-cli"]
+    shim_dir = Path(shim).resolve().parent
+    index_js = shim_dir / "node_modules" / "@music163" / "ncm-cli" / "dist" / "index.js"
+    if index_js.exists():
+        # 优先用同目录下的 node.exe(npm 安装时通常带),否则用 PATH 上的 node
+        local_node = shim_dir / "node.exe"
+        if local_node.exists():
+            return [str(local_node), str(index_js)]
+        return ["node", str(index_js)]
+    # 兜底:走 shim,可能踩 8K 上限
+    return [shim]
 
 
-NCM_BIN = _resolve_ncm_cli()
+NCM_CMD = _resolve_ncm_entry()
 
 
 def run_ncm(args: list[str]) -> dict:
-    """调 ncm-cli,返回解析后的 JSON。出错直接退出。"""
-    cmd = [NCM_BIN, *args, "--output", "json"]
-    # Windows 下 .cmd shim 必须走 shell;POSIX 直接 exec
-    if os.name == "nt":
-        # 把 list -> 字符串,安全引用
-        cmd_str = subprocess.list2cmdline(cmd)
-        proc = subprocess.run(
-            cmd_str,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            shell=True,
-        )
-    else:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            shell=False,
-        )
+    """调 ncm-cli,返回解析后的 JSON。出错直接退出。
+
+    注意:不强制 text/encoding,Windows 下 ncm-cli(.cmd shim + Node)的 stderr
+    可能是 GBK 编码,强制 utf-8 解码会抛 UnicodeDecodeError 让进程崩。
+    这里改成读字节,手动 try 解码,失败时回退 GBK(ignore)。
+    """
+    cmd = [*NCM_CMD, *args, "--output", "json"]
+    # 统一 shell=False:我们已经直接调 node + index.js,无需经 cmd.exe
+    proc = subprocess.run(cmd, capture_output=True, shell=False)
+
+    def _decode(b: bytes) -> str:
+        if not b:
+            return ""
+        try:
+            return b.decode("utf-8")
+        except UnicodeDecodeError:
+            for enc in ("gbk", "cp936", "latin-1"):
+                try:
+                    return b.decode(enc, errors="replace")
+                except Exception:
+                    continue
+            return b.decode("utf-8", errors="replace")
+
+    stdout = _decode(proc.stdout)
+    stderr = _decode(proc.stderr)
     if proc.returncode != 0:
         sys.stderr.write(f"[ERROR] ncm-cli 返回 {proc.returncode}\n")
-        if proc.stderr:
-            sys.stderr.write(proc.stderr + "\n")
+        if stderr:
+            sys.stderr.write(stderr + "\n")
         sys.exit(proc.returncode)
     try:
-        return json.loads(proc.stdout)
+        return json.loads(stdout)
     except json.JSONDecodeError as e:
         sys.stderr.write(f"[ERROR] 无法解析 ncm-cli 输出为 JSON: {e}\n")
-        sys.stderr.write(proc.stdout[:500] + "\n")
+        sys.stderr.write(stdout[:500] + "\n")
         sys.exit(1)
 
 
@@ -111,25 +135,39 @@ def fetch_favorite_playlist_id() -> str:
 
 
 def fetch_playlist_tracks(playlist_id: str) -> list[dict]:
-    """拉取歌单全部曲目(单次最多 500)。"""
+    """拉取歌单全部曲目,自动分页(每页 500)。"""
     print(f"[2/N] 拉取歌单曲目 ...")
-    # 先查 trackCount
     meta = run_ncm(["playlist", "get", "--playlistId", playlist_id])
     total = (meta.get("data") or {}).get("trackCount") or 0
     if not total:
-        # 直接拉 500 兜底
+        # 接口没返回 trackCount,先拉一页 500 兜底
         total = 500
-    limit = min(total, 500)
-    resp = run_ncm([
-        "playlist", "tracks",
-        "--playlistId", playlist_id,
-        "--limit", str(limit),
-        "--offset", "0",
-    ])
-    tracks = resp.get("data") or []
-    print(f"      拿到 {len(tracks)} 首")
+
+    PAGE = 500
+    tracks: list[dict] = []
+    offset = 0
+    while offset < total:
+        limit = min(PAGE, total - offset)
+        resp = run_ncm([
+            "playlist", "tracks",
+            "--playlistId", playlist_id,
+            "--limit", str(limit),
+            "--offset", str(offset),
+        ])
+        page = resp.get("data") or []
+        if not page:
+            break
+        tracks.extend(page)
+        offset += len(page)
+        # 防御:接口返回数量少于请求,说明没有更多了
+        if len(page) < limit:
+            break
+
+    print(f"      共 {total} 首,实际拿到 {len(tracks)} 首")
     if len(tracks) < total:
-        print(f"[WARN] 歌单共 {total} 首,只拿到 {len(tracks)} 首(接口单次上限 500)。大于 500 需要扩展分页逻辑。")
+        sys.stderr.write(
+            f"[WARN] 期望 {total} 首,只拿到 {len(tracks)} 首。可能是接口分页变化或部分歌曲已下架。\n"
+        )
     return tracks
 
 
