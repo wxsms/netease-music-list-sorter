@@ -23,8 +23,8 @@ const { runNcm, NcmError } = require('./ncm.js');
 const {
   fetchFavoritePlaylist, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
-const { fetchAlbumTrackOrder } = require('./album-cache.js');
-const { computeNewOrder, firstArtist, albumInfo } = require('./sort.js');
+const { fetchAlbumTrackOrder, prefetchAlbums } = require('./album-cache.js');
+const { computeNewOrder, collectAlbumIds, firstArtist, albumInfo } = require('./sort.js');
 const { writeBackup, writeNewOrder, listBackups, readBackup } = require('./backup.js');
 const { submitReorder, rollbackFromBackup } = require('./reorder.js');
 
@@ -234,25 +234,26 @@ async function sortFlow(favorite) {
       continue;
     }
 
-    // 计算新顺序:专辑数可预统计,用进度条逐张推进
+    // 计算新顺序:先并发预取专辑数据(缓存命中跳过),再纯内存计算
+    const albumIds = collectAlbumIds(tracks);
     const prog = makeSyncProgress();
-    let albumDone = 0;
-    let albumTotal = 0;
     let newTracks;
     try {
-      newTracks = computeNewOrder(tracks, fetchAlbumTrackOrder, {
-        onAlbumStart(count) {
-          albumTotal = count;
-        },
-        onAlbumDone() {
-          albumDone++;
-          prog.update(albumDone, albumTotal, '计算新顺序(拉取专辑信息)');
-        },
+      const { fetched, failed, cached } = await prefetchAlbums(albumIds, (done, total) => {
+        prog.update(done, total, '拉取专辑信息(并发)');
       });
-      if (albumTotal > 0) prog.finish(`✅ 计算完成,共 ${albumTotal} 张专辑`);
-      else p.log.success('✅ 计算完成(无专辑信息,按原顺序)');
+      prog.finish(`✅ 专辑数据就绪:缓存 ${cached} 张,新拉 ${fetched} 张${failed ? `,失败 ${failed} 张(退化为原顺序)` : ''}`);
     } catch (e) {
       prog.finish();
+      p.log.error(e.message);
+      continue;
+    }
+
+    try {
+      newTracks = computeNewOrder(tracks, fetchAlbumTrackOrder);
+      if (albumIds.length > 0) p.log.success(`✅ 计算完成,共 ${albumIds.length} 张专辑`);
+      else p.log.success('✅ 计算完成(无专辑信息,按原顺序)');
+    } catch (e) {
       p.log.error(e.message);
       continue;
     }

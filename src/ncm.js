@@ -8,7 +8,7 @@
  * 解决:直接用 node 启动 ncm-cli 的 dist/index.js,跟 .cmd 内部做的一样。
  */
 
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -94,4 +94,39 @@ function runNcm(args) {
   }
 }
 
-module.exports = { runNcm, NcmError, resolveNcmEntry };
+/**
+ * runNcm 的异步版(spawn + Promise),不阻塞事件循环,可并发调用。
+ * 错误语义与 runNcm 一致(NcmError)。
+ */
+function runNcmAsync(args) {
+  return new Promise((resolve, reject) => {
+    const fullArgs = [...NCM_CMD.slice(1), ...args, '--output', 'json'];
+    const child = spawn(NCM_CMD[0], fullArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', err => {
+      reject(new NcmError(
+        'spawn',
+        `无法启动 ncm-cli: ${err.message}`,
+        '请确认 ncm-cli 已通过 npm install -g @music163/ncm-cli 安装并在 PATH 中。',
+      ));
+    });
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new NcmError('exit', `ncm-cli 退出码 ${code}`, (stderr || stdout || '').slice(0, 500)));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (e) {
+        reject(new NcmError('parse', `解析 ncm-cli 输出为 JSON 失败: ${e.message}`, (stdout || '').slice(0, 500)));
+      }
+    });
+  });
+}
+
+module.exports = { runNcm, runNcmAsync, NcmError, resolveNcmEntry };

@@ -29,6 +29,22 @@ function artistKey(artist) {
 }
 
 /**
+ * 收集曲目里出现的专辑 ID(去重,保持首次出现顺序),供并发预取用。
+ */
+function collectAlbumIds(tracks) {
+  const seen = new Set();
+  const ids = [];
+  for (const t of tracks) {
+    const al = albumInfo(t);
+    const id = al && al.id;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+/**
  * 计算新顺序。
  *
  * @param {Array} tracks 歌单曲目(原顺序)
@@ -115,4 +131,4 @@ function computeNewOrder(tracks, getAlbumTrackOrder, hooks) {
   return newTracks;
 }
 
-module.exports = { computeNewOrder, firstArtist, albumInfo, artistKey };
+module.exports = { computeNewOrder, collectAlbumIds, firstArtist, albumInfo, artistKey };
