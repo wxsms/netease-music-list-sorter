@@ -1,0 +1,16 @@
+{
+  "name": "netease-music-list-sorter",
+  "version": "1.0.0",
+  "description": "按\"专辑优先 + 艺人首次出现\"规则重排网易云音乐歌单的 CLI 工具",
+  "private": true,
+  "scripts": {
+    "start": "node cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.4.0",
+    "commander": "^15.0.0"
+  }
+}

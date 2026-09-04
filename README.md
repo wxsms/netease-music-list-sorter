@@ -1,8 +1,13 @@
 # netease-music-list-sorter
 
-按"专辑优先 + 艺人首次出现"规则重排网易云音乐歌单的 Node.js 脚本。
+按"专辑优先 + 艺人首次出现"规则重排网易云音乐歌单的 Node.js CLI 工具。
 
 通过 [`ncm-cli`](https://www.npmjs.com/package/@music163/ncm-cli) 拉取歌单与专辑数据,本地计算新顺序后,调 `ncm-cli playlist reorder` 一次性提交到云端。
+
+提供两种用法:
+
+- **交互式向导**(推荐):`npm start`,按步骤选歌单 → 预览 → 确认提交,无需记参数。
+- **命令行脚本**:`node sort-playlist.js` / `node rollback.js`,适合熟练用户与自动化。
 
 ## 适用场景
 
@@ -37,11 +42,38 @@ ncm-cli --version
 ncm-cli user favorite --output table
 ```
 
-脚本本身**只依赖 Node 标准库**(`child_process` / `fs` / `path`),不需要 `npm install`。
+项目依赖分两层:
+
+- **交互入口**(`npm start` / `node cli.js`)需要 `@clack/prompts` 与 `commander`,克隆后跑一次 `npm install` 即可。
+- **脚本入口**(`sort-playlist.js` / `rollback.js`)只依赖 Node 标准库,不装 npm 包也能跑。
 
 ## 使用
 
-### 排红心歌单(默认)
+### 交互式向导(推荐)
+
+```bash
+npm start        # 或 node cli.js
+```
+
+流程:环境预检(自动验证 ncm-cli 已安装已登录)→ 选操作(排序 / 回滚 / 退出)→ 选歌单来源(红心 / 收藏 / 创建)→ 选歌单 → 预览新顺序与汇总 → 确认提交。
+
+安全设计:
+
+- 提交前必预览(前 15 首新顺序 + 位置变动统计)并需显式确认,取消不发起任何请求。
+- 交互模式**强制写备份**,提交后 outro 会报告备份文件路径。
+- 内置回滚入口:列出 `output/` 下的备份文件(最新在前),选中确认即可恢复。
+
+### 命令行模式
+
+`cli.js` 也支持带子命令运行(行为与脚本入口一致):
+
+```bash
+node cli.js sort --dry-run
+node cli.js sort --playlistId <enc>
+node cli.js rollback output/backup-<playlistId>-<timestamp>.json --dry-run
+```
+
+### 排红心歌单(脚本入口,默认)
 
 ```bash
 # 先预览,不提交
@@ -115,14 +147,25 @@ node rollback.js <backup.json> --playlistId <enc>   # backup 文件名无法解�
 
 ```
 .
-├── sort-playlist.js   # 主脚本:拉歌单 → 计算 → 提交 reorder
-├── rollback.js        # 从 backup 文件回滚歌单顺序
-├── .gitignore         # 忽略 output/ .cache/ 凭据文件等
+├── cli.js             # CLI 入口:无参数进交互向导,带参数走命令行模式
+├── src/
+│   ├── interactive.js # 交互式向导(@clack/prompts)
+│   ├── ncm.js         # ncm-cli 调用(含 Windows 绕过 .cmd shim 的启动方式)
+│   ├── playlist.js    # 红心/收藏/创建歌单列表与曲目拉取
+│   ├── album-cache.js # album tracks 三级缓存
+│   ├── sort.js        # 排序核心(纯函数,专辑内顺序回调注入)
+│   ├── backup.js      # 备份/新顺序落盘/备份枚举
+│   └── reorder.js     # reorder 提交(排序与回滚共用)
+├── sort-playlist.js   # 脚本入口:拉歌单 → 计算 → 提交 reorder(薄壳,逻辑在 src/)
+├── rollback.js        # 脚本入口:从 backup 文件回滚歌单顺序(薄壳,逻辑在 src/)
+├── package.json       # 交互入口的依赖(@clack/prompts + commander)与 npm start
+├── .gitignore         # 忽略 output/ .cache/ node_modules/ 凭据文件等
 ├── CLAUDE.md          # 给 AI 协作者的提示词
 └── README.md
 ```
 
 ## 依赖范围
 
-仅使用 Node.js 标准库(`child_process` / `fs` / `path`),不安装任何 npm 包。
+- 脚本入口(`sort-playlist.js` / `rollback.js`):仅 Node.js 标准库。
+- 交互入口(`cli.js`):`@clack/prompts`(交互组件)+ `commander`(参数解析),见 `package.json`。
 
