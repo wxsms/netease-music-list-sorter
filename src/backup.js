@@ -3,11 +3,11 @@
 /**
  * 备份 / 新顺序落盘 / 备份文件枚举。
  *
- * 目录结构(.cache/ 下按用途细分):
- * - .cache/backups/backup-<playlistId>-<YYYYMMDD-HHMMSS>.json  排序前的原始顺序(每次跑都写)
- * - .cache/new-order/new-order-<playlistId>.json                 排序后的新顺序(固定文件名,覆盖写)
+ * 目录结构(.cache/ 下按用途细分,文件名不带类型前缀——目录已表达类型):
+ * - .cache/backups/<playlistId>-<YYYYMMDD-HHMMSS>.json   排序前的原始顺序(每次跑都写)
+ * - .cache/new-order/<playlistId>.json                    排序后的新顺序(固定文件名,覆盖写)
  *
- * 兼容:旧版平铺在 output/ 下的同名文件会在首次调用时自动迁移到新目录。
+ * 兼容:旧版文件(output/ 下带前缀、.cache/ 子目录下带前缀)会在首次调用时自动迁移并重命名。
  */
 
 const fs = require('fs');
@@ -21,21 +21,24 @@ const NEW_ORDER_DIR = path.join(CACHE_ROOT, 'new-order');
 const LEGACY_OUTPUT_DIR = path.join(REPO_ROOT, 'output');
 
 /**
- * 把旧版 output/ 下的备份与新顺序文件一次性迁移到 .cache/ 子目录。
- * 幂等:目录不存在或已迁移过则直接返回。
+ * 把旧版文件迁移到新结构并去掉类型前缀。幂等。
+ * 兼容三种旧布局:output/ 平铺带前缀、.cache/ 子目录带前缀、.cache/ 子目录不带前缀(已是新命名)。
  */
 function migrateLegacyOutput() {
-  if (!fs.existsSync(LEGACY_OUTPUT_DIR)) return;
   const moves = [
-    { from: LEGACY_OUTPUT_DIR, to: BACKUP_DIR, pattern: /^backup-.+\.json$/ },
-    { from: LEGACY_OUTPUT_DIR, to: NEW_ORDER_DIR, pattern: /^new-order-.+\.json$/ },
+    // [源目录, 目标目录, 文件名匹配, 去掉的前缀]
+    { from: LEGACY_OUTPUT_DIR, to: BACKUP_DIR, pattern: /^backup-(.+\.json)$/, strip: 'backup-' },
+    { from: LEGACY_OUTPUT_DIR, to: NEW_ORDER_DIR, pattern: /^new-order-(.+\.json)$/, strip: 'new-order-' },
+    { from: BACKUP_DIR, to: BACKUP_DIR, pattern: /^backup-(.+\.json)$/, strip: 'backup-' },
+    { from: NEW_ORDER_DIR, to: NEW_ORDER_DIR, pattern: /^new-order-(.+\.json)$/, strip: 'new-order-' },
   ];
-  for (const { from, to, pattern } of moves) {
+  for (const { from, to, pattern, strip } of moves) {
     if (!fs.existsSync(from)) continue;
     for (const f of fs.readdirSync(from)) {
-      if (!pattern.test(f)) continue;
+      const m = f.match(pattern);
+      if (!m) continue;
       fs.mkdirSync(to, { recursive: true });
-      const dest = path.join(to, f);
+      const dest = path.join(to, m[1]);
       if (!fs.existsSync(dest)) fs.renameSync(path.join(from, f), dest);
     }
   }
@@ -65,7 +68,7 @@ function writeBackup(playlistId, tracks) {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
   const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  const path_ = path.join(BACKUP_DIR, `backup-${playlistId}-${ts}.json`);
+  const path_ = path.join(BACKUP_DIR, `${playlistId}-${ts}.json`);
   fs.writeFileSync(path_, JSON.stringify(snapshot(tracks), null, 2), 'utf8');
   return path_;
 }
@@ -73,16 +76,17 @@ function writeBackup(playlistId, tracks) {
 function writeNewOrder(playlistId, tracks) {
   migrateLegacyOutput();
   fs.mkdirSync(NEW_ORDER_DIR, { recursive: true });
-  const path_ = path.join(NEW_ORDER_DIR, `new-order-${playlistId}.json`);
+  const path_ = path.join(NEW_ORDER_DIR, `${playlistId}.json`);
   fs.writeFileSync(path_, JSON.stringify(snapshot(tracks), null, 2), 'utf8');
   return path_;
 }
 
 /**
  * 从 backup 文件名解析歌单 ID,解析不出返回 null。
+ * 兼容新命名(<pid>-<ts>.json)与旧命名(backup-<pid>-<ts>.json)。
  */
 function extractPlaylistIdFromFilename(filename) {
-  const m = filename.match(/backup-([A-F0-9]+)-/);
+  const m = filename.match(/^(?:backup-)?([A-F0-9]+)-/);
   return m ? m[1] : null;
 }
 
@@ -94,7 +98,7 @@ function listBackups() {
   migrateLegacyOutput();
   if (!fs.existsSync(BACKUP_DIR)) return [];
   const entries = fs.readdirSync(BACKUP_DIR)
-    .filter(f => /^backup-.+\.json$/.test(f))
+    .filter(f => /^(?:backup-)?[A-F0-9]+-.+\.json$/.test(f))
     .sort()
     .reverse();
 
