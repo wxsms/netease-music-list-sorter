@@ -45,6 +45,62 @@ function collectAlbumIds(tracks) {
 }
 
 /**
+ * 从(已按歌手块排列的)曲目序列中提取歌手块。
+ *
+ * 线性扫描:连续同 artistKey 的段即一个块。用于对 computeNewOrder 的输出
+ * 做块级调整——输出本身已按"歌手块"排列,反推保证所见即所得。
+ *
+ * @param {Array} tracks 已按歌手块排列的曲目(如 computeNewOrder 的输出)
+ * @returns {Array} [{ artistKey, displayName, tracks }],块内 track 对象与输入共享引用
+ */
+function extractArtistBlocks(tracks) {
+  const blocks = [];
+  for (const t of tracks) {
+    const key = artistKey(firstArtist(t));
+    const last = blocks[blocks.length - 1];
+    if (last && last.artistKey === key) {
+      last.tracks.push(t);
+    } else {
+      const artist = firstArtist(t);
+      blocks.push({
+        artistKey: key,
+        displayName: (artist && artist.name) || '(无歌手信息)',
+        tracks: [t],
+      });
+    }
+  }
+  return blocks;
+}
+
+/**
+ * 按目标歌手 key 顺序重排歌手块,块内曲目顺序不变。
+ *
+ * 未出现在 artistOrder 中的块按原相对顺序追加末尾(容错:调用方漏传不丢歌)。
+ *
+ * @param {Array} tracks 已按歌手块排列的曲目
+ * @param {string[]} artistOrder 目标歌手 key 顺序(如 extractArtistBlocks 返回的 artistKey 列表)
+ * @returns {Array} 重排后的曲目
+ */
+function reorderByArtistBlocks(tracks, artistOrder) {
+  const blocks = extractArtistBlocks(tracks);
+  const byKey = new Map(blocks.map(b => [b.artistKey, b]));
+
+  const out = [];
+  const used = new Set();
+  for (const key of artistOrder) {
+    const b = byKey.get(key);
+    if (!b || used.has(key)) continue;
+    used.add(key);
+    out.push(...b.tracks);
+  }
+  for (const b of blocks) {
+    if (used.has(b.artistKey)) continue;
+    out.push(...b.tracks);
+  }
+  return out;
+}
+
+/**
  * 计算新顺序。
  *
  * @param {Array} tracks 歌单曲目(原顺序)
@@ -131,4 +187,4 @@ function computeNewOrder(tracks, getAlbumTrackOrder, hooks) {
   return newTracks;
 }
 
-module.exports = { computeNewOrder, collectAlbumIds, firstArtist, albumInfo, artistKey };
+module.exports = { computeNewOrder, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo, artistKey };

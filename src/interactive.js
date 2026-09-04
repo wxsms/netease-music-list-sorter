@@ -24,7 +24,7 @@ const {
   fetchFavoritePlaylist, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
 const { fetchAlbumTrackOrder, prefetchAlbums } = require('./album-cache.js');
-const { computeNewOrder, collectAlbumIds, firstArtist, albumInfo } = require('./sort.js');
+const { computeNewOrder, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo } = require('./sort.js');
 const { writeBackup, writeNewOrder, listBackups, readBackup } = require('./backup.js');
 const { submitReorder, rollbackFromBackup } = require('./reorder.js');
 
@@ -185,6 +185,59 @@ async function selectPlaylist(favorite) {
   }
 }
 
+// ---------- 歌手顺序调整 ----------
+
+/**
+ * 歌手顺序调整界面:循环 选歌手 → 选操作(置顶/上移/下移/置底/完成/放弃)。
+ * 返回调整后的块顺序(artistKey 数组);放弃/取消返回 null。
+ */
+async function adjustArtistOrderFlow(blocks) {
+  // 快照:放弃时恢复
+  const originalOrder = blocks.map(b => b.artistKey);
+  let order = [...originalOrder];
+
+  for (;;) {
+    const idx = guard(await p.select({
+      message: `🎚️ 选择要移动的歌手(共 ${order.length} 位,列表即当前顺序)`,
+      options: order.map((key, i) => {
+        const b = blocks.find(x => x.artistKey === key);
+        return {
+          value: i,
+          label: `${i + 1}. ${b.displayName}`,
+          hint: `${b.tracks.length} 首`,
+        };
+      }),
+    }));
+
+    const op = guard(await p.select({
+      message: `对「${blocks.find(x => x.artistKey === order[idx]).displayName}」执行:`,
+      options: [
+        { value: 'top', label: '⏫ 置顶' },
+        { value: 'up', label: '⬆️ 上移一位' },
+        { value: 'down', label: '⬇️ 下移一位' },
+        { value: 'bottom', label: '⏬ 置底' },
+        { value: 'done', label: '✅ 完成调整' },
+        { value: 'abort', label: '↩️ 放弃调整' },
+      ],
+    }));
+
+    if (op === 'done') return order;
+    if (op === 'abort') {
+      p.log.info('已放弃调整,保持原顺序');
+      return null;
+    }
+
+    // 移动操作(边界不报错不变序)
+    const item = order.splice(idx, 1)[0];
+    let target = idx;
+    if (op === 'top') target = 0;
+    else if (op === 'up') target = Math.max(0, idx - 1);
+    else if (op === 'down') target = Math.min(order.length, idx + 1);
+    else if (op === 'bottom') target = order.length;
+    order.splice(target, 0, item);
+  }
+}
+
 // ---------- 排序分支 ----------
 
 function previewLines(oldTracks, newTracks, n = 15) {
@@ -281,6 +334,7 @@ async function sortFlow(favorite) {
         options: [
           { value: 'submit', label: '🚀 确认提交' },
           { value: 'toggle-save', label: `💾 保存新顺序文件: ${saveNewOrder ? '是' : '否'}` },
+          { value: 'adjust', label: '🎚️ 调整歌手顺序' },
           { value: 'change', label: '📂 换一个歌单' },
           { value: 'cancel', label: '❌ 取消' },
         ],
@@ -292,6 +346,16 @@ async function sortFlow(favorite) {
       if (action === 'toggle-save') {
         saveNewOrder = !saveNewOrder;
         continue;
+      }
+
+      if (action === 'adjust') {
+        const blocks = extractArtistBlocks(newTracks);
+        const adjustedOrder = await adjustArtistOrderFlow(blocks);
+        if (adjustedOrder) {
+          newTracks = reorderByArtistBlocks(newTracks, adjustedOrder);
+          p.log.success(`✅ 已按新歌手顺序重排(共 ${adjustedOrder.length} 位歌手)`);
+        }
+        continue; // 回确认环节,预览自动刷新
       }
 
       // submit:强制备份 → 可选新顺序文件 → 提交
