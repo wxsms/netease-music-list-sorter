@@ -48,6 +48,44 @@ function ncmErrMsg(e) {
   return e.message;
 }
 
+/**
+ * 同步进度条:每次 update 直接用 \r 重绘当前行。
+ *
+ * 不用 @clack/prompts 的 progress/spinner:它们靠 setInterval 重绘,
+ * 而 runNcm 是 spawnSync 同步阻塞事件循环,interval 永远不会触发,
+ * 进度条一帧都画不出来。直写 stdout 才能在同步流程里实时刷新。
+ */
+function makeSyncProgress() {
+  let lastLen = 0;
+  let active = false;
+  const WIDTH = 24;
+  const isTTY = !!process.stdout.isTTY;
+
+  return {
+    /** 更新进度(current/total)与标签;非 TTY 下静默跳过渲染。 */
+    update(current, total, label) {
+      if (!isTTY) return;
+      const ratio = total > 0 ? Math.min(1, current / total) : 1;
+      const filled = Math.round(ratio * WIDTH);
+      const bar = '█'.repeat(filled) + '░'.repeat(WIDTH - filled);
+      const pct = String(Math.round(ratio * 100)).padStart(3) + '%';
+      const line = `◆  ${bar} ${pct}  ${current}/${total}  ${label}`;
+      process.stdout.write('\r' + ' '.repeat(lastLen) + '\r' + line);
+      lastLen = line.length;
+      active = true;
+    },
+    /** 清掉进度行并输出完成信息。 */
+    finish(msg) {
+      if (active && isTTY) {
+        process.stdout.write('\r' + ' '.repeat(lastLen) + '\r');
+        active = false;
+        lastLen = 0;
+      }
+      if (msg) p.log.success(msg);
+    },
+  };
+}
+
 // ---------- 环境预检 ----------
 
 /**
@@ -178,23 +216,15 @@ async function sortFlow(favorite) {
 
     // 拉曲目 + 计算
     // 分页拉取:已知总数,用进度条逐页推进
-    const trackProg = p.progress();
-    let trackProgStarted = false;
-    let trackLoaded = 0;
+    const trackProg = makeSyncProgress();
     let tracks;
     try {
       tracks = fetchPlaylistTracks(playlist.id, (loaded, total) => {
-        if (!trackProgStarted) {
-          trackProgStarted = true;
-          trackProg.start({ total });
-        }
-        trackProg.advance(loaded - trackLoaded);
-        trackLoaded = loaded;
+        trackProg.update(loaded, total, '拉取歌单曲目');
       });
-      if (trackProgStarted) trackProg.stop(`✅ 共 ${tracks.length} 首`);
-      else p.log.success(`✅ 共 ${tracks.length} 首`);
+      trackProg.finish(`✅ 共 ${tracks.length} 首`);
     } catch (e) {
-      if (trackProgStarted) trackProg.error('❌ 拉取歌单曲目失败');
+      trackProg.finish();
       p.log.error(ncmErrMsg(e).split('\n')[0]);
       continue; // 换一个歌单
     }
@@ -205,27 +235,24 @@ async function sortFlow(favorite) {
     }
 
     // 计算新顺序:专辑数可预统计,用进度条逐张推进
-    const prog = p.progress();
-    let progStarted = false;
+    const prog = makeSyncProgress();
+    let albumDone = 0;
     let albumTotal = 0;
     let newTracks;
     try {
       newTracks = computeNewOrder(tracks, fetchAlbumTrackOrder, {
         onAlbumStart(count) {
           albumTotal = count;
-          if (count > 0) {
-            progStarted = true;
-            prog.start({ total: count });
-          }
         },
         onAlbumDone() {
-          if (progStarted) prog.advance(1);
+          albumDone++;
+          prog.update(albumDone, albumTotal, '计算新顺序(拉取专辑信息)');
         },
       });
-      if (progStarted) prog.stop(`✅ 计算完成,共 ${albumTotal} 张专辑`);
+      if (albumTotal > 0) prog.finish(`✅ 计算完成,共 ${albumTotal} 张专辑`);
       else p.log.success('✅ 计算完成(无专辑信息,按原顺序)');
     } catch (e) {
-      if (progStarted) prog.error('❌ 计算新顺序失败');
+      prog.finish();
       p.log.error(e.message);
       continue;
     }
