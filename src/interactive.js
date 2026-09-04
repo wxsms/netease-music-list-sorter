@@ -15,6 +15,7 @@
 const p = require('@clack/prompts');
 const { createRequire } = require('module');
 const path = require('path');
+const readline = require('readline');
 
 const require_ = createRequire(__filename);
 const pkg = require_('../package.json');
@@ -188,54 +189,114 @@ async function selectPlaylist(favorite) {
 // ---------- 歌手顺序调整 ----------
 
 /**
- * 歌手顺序调整界面:循环 选歌手 → 选操作(置顶/上移/下移/置底/完成/放弃)。
- * 返回调整后的块顺序(artistKey 数组);放弃/取消返回 null。
+ * 歌手顺序调整界面:抓取式键盘交互(直接接管 stdin 自绘列表)。
+ *
+ * 交互模型:
+ * - ↑/↓(或 PgUp/PgDn 翻 10 位):未抓取时移动光标;抓取时移动该歌手(可连续)
+ * - Space:抓取/放下光标所在歌手
+ * - Enter:确认整个调整结果(返回 artistKey 顺序)
+ * - Esc:放弃调整(返回 null,调用方保持原顺序)
+ * - Ctrl+C:退出向导(与其它步骤的取消语义一致)
+ *
+ * clack 没有可重排的列表组件,这里用 readline keypress + ANSI 转义自绘。
  */
-async function adjustArtistOrderFlow(blocks) {
-  // 快照:放弃时恢复
-  const originalOrder = blocks.map(b => b.artistKey);
-  let order = [...originalOrder];
-
-  for (;;) {
-    const idx = guard(await p.select({
-      message: `🎚️ 选择要移动的歌手(共 ${order.length} 位,列表即当前顺序)`,
-      options: order.map((key, i) => {
-        const b = blocks.find(x => x.artistKey === key);
-        return {
-          value: i,
-          label: `${i + 1}. ${b.displayName}`,
-          hint: `${b.tracks.length} 首`,
-        };
-      }),
-    }));
-
-    const op = guard(await p.select({
-      message: `对「${blocks.find(x => x.artistKey === order[idx]).displayName}」执行:`,
-      options: [
-        { value: 'top', label: '⏫ 置顶' },
-        { value: 'up', label: '⬆️ 上移一位' },
-        { value: 'down', label: '⬇️ 下移一位' },
-        { value: 'bottom', label: '⏬ 置底' },
-        { value: 'done', label: '✅ 完成调整' },
-        { value: 'abort', label: '↩️ 放弃调整' },
-      ],
-    }));
-
-    if (op === 'done') return order;
-    if (op === 'abort') {
-      p.log.info('已放弃调整,保持原顺序');
-      return null;
+async function reorderArtistsPrompt(blocks) {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+    if (!stdin.isTTY || !stdout.isTTY || typeof stdin.setRawMode !== 'function') {
+      p.log.warn('当前终端不支持键盘交互,跳过调整');
+      resolve(null);
+      return;
     }
 
-    // 移动操作(边界不报错不变序)
-    const item = order.splice(idx, 1)[0];
-    let target = idx;
-    if (op === 'top') target = 0;
-    else if (op === 'up') target = Math.max(0, idx - 1);
-    else if (op === 'down') target = Math.min(order.length, idx + 1);
-    else if (op === 'bottom') target = order.length;
-    order.splice(target, 0, item);
-  }
+    const order = blocks.map(b => b.artistKey);
+    const byKey = new Map(blocks.map(b => [b.artistKey, b]));
+    const HEIGHT = 12; // 列表可见行数(不含头部提示)
+    let cursor = 0;
+    let grabbed = false;
+    let lastLines = 0;
+    let settled = false;
+
+    const CYAN = s => `\x1b[36m${s}\x1b[0m`;
+    const MAGENTA = s => `\x1b[35m${s}\x1b[0m`;
+    const DIM = s => `\x1b[2m${s}\x1b[0m`;
+
+    function eraseFrame() {
+      if (lastLines > 0) {
+        stdout.write(`\x1b[${lastLines}A\x1b[J`);
+        lastLines = 0;
+      }
+    }
+
+    function render() {
+      eraseFrame();
+      const lines = [];
+      if (grabbed) {
+        const cur = byKey.get(order[cursor]);
+        lines.push(MAGENTA(`🎚️ 已抓取「${cur.displayName}」: ↑/↓ 移动 · Space 放下 · Enter 完成`));
+      } else {
+        lines.push(CYAN('🎚️ ↑/↓ 选择 · Space 抓取移动 · PgUp/PgDn 翻页 · Enter 完成 · Esc 放弃'));
+      }
+      lines.push('');
+      const half = Math.floor((HEIGHT - 1) / 2);
+      const start = Math.max(0, Math.min(cursor - half, Math.max(0, order.length - HEIGHT)));
+      const end = Math.min(order.length, start + HEIGHT);
+      if (start > 0) lines.push(DIM('   ⋮'));
+      for (let i = start; i < end; i++) {
+        const b = byKey.get(order[i]);
+        const marker = i === cursor ? (grabbed ? '↕ ' : '▶ ') : '  ';
+        const text = `${marker}${String(i + 1).padStart(3)}. ${b.displayName} (${b.tracks.length} 首)`;
+        lines.push(i === cursor ? (grabbed ? MAGENTA(text) : CYAN(text)) : text);
+      }
+      if (end < order.length) lines.push(DIM('   ⋮'));
+      stdout.write(lines.join('\n') + '\n');
+      lastLines = lines.length;
+    }
+
+    function finish(result, exitWizard) {
+      if (settled) return;
+      settled = true;
+      stdin.removeListener('keypress', onKey);
+      try { stdin.setRawMode(false); } catch (e) { /* 已恢复则忽略 */ }
+      stdin.resume();
+      eraseFrame();
+      if (exitWizard) bail(); // process.exit(0),无云端请求
+      resolve(result);
+    }
+
+    function step(dir, count) {
+      count = count || 1;
+      if (grabbed) {
+        const target = Math.max(0, Math.min(order.length - 1, cursor + dir * count));
+        if (target === cursor) { render(); return; } // 边界不动
+        const item = order.splice(cursor, 1)[0];
+        order.splice(target, 0, item);
+        cursor = target;
+      } else {
+        cursor = Math.max(0, Math.min(order.length - 1, cursor + dir * count));
+      }
+      render();
+    }
+
+    function onKey(str, key) {
+      const name = key && key.name;
+      if (key && key.ctrl && (name === 'c' || name === 'd')) { finish(null, true); return; }
+      if (name === 'up') step(-1);
+      else if (name === 'down') step(1);
+      else if (name === 'pageup') step(-1, 10);
+      else if (name === 'pagedown') step(1, 10);
+      else if (name === 'space' || str === ' ') { grabbed = !grabbed; render(); }
+      else if (name === 'return' || str === '\r' || str === '\n') { finish(order.slice(), false); }
+      else if (name === 'escape') { finish(null, false); }
+    }
+
+    readline.emitKeypressEvents(stdin);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on('keypress', onKey);
+    render();
+  });
 }
 
 // ---------- 排序分支 ----------
@@ -350,10 +411,12 @@ async function sortFlow(favorite) {
 
       if (action === 'adjust') {
         const blocks = extractArtistBlocks(newTracks);
-        const adjustedOrder = await adjustArtistOrderFlow(blocks);
+        const adjustedOrder = await reorderArtistsPrompt(blocks);
         if (adjustedOrder) {
           newTracks = reorderByArtistBlocks(newTracks, adjustedOrder);
           p.log.success(`✅ 已按新歌手顺序重排(共 ${adjustedOrder.length} 位歌手)`);
+        } else {
+          p.log.info('已放弃调整,保持原顺序');
         }
         continue; // 回确认环节,预览自动刷新
       }
@@ -463,4 +526,4 @@ async function interactive() {
   }
 }
 
-module.exports = { interactive };
+module.exports = { interactive, reorderArtistsPrompt };
