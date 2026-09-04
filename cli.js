@@ -4,8 +4,8 @@
  *
  * 用法:
  *   node cli.js                # 或 npm start —— 交互式向导
- *   node cli.js sort [选项]    # 排序歌单(等价 sort-playlist.js)
- *   node cli.js rollback <backup.json> [选项]  # 回滚(等价 rollback.js)
+ *   node cli.js sort [选项]    # 排序歌单
+ *   node cli.js rollback <backup.json> [选项]  # 回滚
  */
 
 'use strict';
@@ -165,7 +165,7 @@ if (process.argv.length <= 2) {
 
   program
     .command('sort')
-    .description('排序歌单(等价 node sort-playlist.js)')
+    .description('排序歌单')
     .option('--playlistId <enc>', '加密歌单 ID;不传则默认红心歌单')
     .option('--dry-run', '只计算新顺序并预览,不提交')
     .option('--no-backup', '不写备份文件(不推荐,reorder 不可撤销)')
@@ -174,7 +174,7 @@ if (process.argv.length <= 2) {
 
   program
     .command('rollback <backupFile>')
-    .description('回滚歌单顺序(等价 node rollback.js)')
+    .description('回滚歌单顺序')
     .option('--playlistId <enc>', 'backup 文件名无法解析 ID 时手动指定')
     .option('--dry-run', '只打印将提交的顺序,不提交')
     .action(runRollback);

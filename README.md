@@ -7,7 +7,7 @@
 提供两种用法:
 
 - **交互式向导**(推荐):`npm start`,按步骤选歌单 → 预览 → 确认提交,无需记参数。
-- **命令行脚本**:`node sort-playlist.js` / `node rollback.js`,适合熟练用户与自动化。
+- **命令行模式**:`node cli.js sort` / `node cli.js rollback`,适合熟练用户与自动化。
 
 ## 适用场景
 
@@ -42,10 +42,7 @@ ncm-cli --version
 ncm-cli user favorite --output table
 ```
 
-项目依赖分两层:
-
-- **交互入口**(`npm start` / `node cli.js`)需要 `@clack/prompts` 与 `commander`,克隆后跑一次 `npm install` 即可。
-- **脚本入口**(`sort-playlist.js` / `rollback.js`)只依赖 Node 标准库,不装 npm 包也能跑。
+克隆后跑一次 `npm install` 安装依赖(`@clack/prompts` + `commander`)即可使用全部功能。
 
 ## 使用
 
@@ -65,7 +62,7 @@ npm start        # 或 node cli.js
 
 ### 命令行模式
 
-`cli.js` 也支持带子命令运行(行为与脚本入口一致):
+`cli.js` 支持带子命令运行:
 
 ```bash
 node cli.js sort --dry-run
@@ -73,26 +70,26 @@ node cli.js sort --playlistId <enc>
 node cli.js rollback output/backup-<playlistId>-<timestamp>.json --dry-run
 ```
 
-### 排红心歌单(脚本入口,默认)
+### 排红心歌单(命令行,默认)
 
 ```bash
 # 先预览,不提交
-node sort-playlist.js --dry-run
+node cli.js sort --dry-run
 
 # 实际提交
-node sort-playlist.js
+node cli.js sort
 ```
 
 ### 排指定歌单
 
 ```bash
-node sort-playlist.js --playlistId <加密歌单ID> --dry-run
-node sort-playlist.js --playlistId <加密歌单ID>
+node cli.js sort --playlistId <加密歌单ID> --dry-run
+node cli.js sort --playlistId <加密歌单ID>
 ```
 
 加密歌单 ID 可以通过 `ncm-cli user favorite`(红心)或 `ncm-cli playlist collected / created`(收藏/创建的歌单)拿到,JSON 响应里的 `data.id` 字段就是。
 
-### 完整参数
+### sort 子命令完整参数
 
 | 参数 | 说明 |
 |------|------|
@@ -117,12 +114,12 @@ node sort-playlist.js --playlistId <加密歌单ID>
 
 ## 回滚
 
-`rollback.js` 把歌单顺序恢复到某个 backup 文件记录的顺序:
+`cli.js rollback` 把歌单顺序恢复到某个 backup 文件记录的顺序:
 
 ```bash
-node rollback.js output/backup-<playlistId>-<timestamp>.json
-node rollback.js output/backup-<playlistId>-<timestamp>.json --dry-run
-node rollback.js <backup.json> --playlistId <enc>   # backup 文件名无法解析 ID 时手动指定
+node cli.js rollback output/backup-<playlistId>-<timestamp>.json
+node cli.js rollback output/backup-<playlistId>-<timestamp>.json --dry-run
+node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法解析 ID 时手动指定
 ```
 
 ## Windows 平台注意事项
@@ -156,9 +153,7 @@ node rollback.js <backup.json> --playlistId <enc>   # backup 文件名无法解�
 │   ├── sort.js        # 排序核心(纯函数,专辑内顺序回调注入)
 │   ├── backup.js      # 备份/新顺序落盘/备份枚举
 │   └── reorder.js     # reorder 提交(排序与回滚共用)
-├── sort-playlist.js   # 脚本入口:拉歌单 → 计算 → 提交 reorder(薄壳,逻辑在 src/)
-├── rollback.js        # 脚本入口:从 backup 文件回滚歌单顺序(薄壳,逻辑在 src/)
-├── package.json       # 交互入口的依赖(@clack/prompts + commander)与 npm start
+├── package.json       # 依赖(@clack/prompts + commander)与 npm start
 ├── .gitignore         # 忽略 output/ .cache/ node_modules/ 凭据文件等
 ├── CLAUDE.md          # 给 AI 协作者的提示词
 └── README.md
@@ -166,6 +161,5 @@ node rollback.js <backup.json> --playlistId <enc>   # backup 文件名无法解�
 
 ## 依赖范围
 
-- 脚本入口(`sort-playlist.js` / `rollback.js`):仅 Node.js 标准库。
-- 交互入口(`cli.js`):`@clack/prompts`(交互组件)+ `commander`(参数解析),见 `package.json`。
+`@clack/prompts`(交互组件)+ `commander`(参数解析),见 `package.json`;其余仅用 Node.js 标准库。
 
