@@ -23,7 +23,7 @@ const { runNcm, NcmError } = require('./ncm.js');
 const {
   fetchFavoritePlaylist, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
-const { fetchAlbumTrackOrder, loadedAlbumCount } = require('./album-cache.js');
+const { fetchAlbumTrackOrder } = require('./album-cache.js');
 const { computeNewOrder, firstArtist, albumInfo } = require('./sort.js');
 const { writeBackup, writeNewOrder, listBackups, readBackup } = require('./backup.js');
 const { submitReorder, rollbackFromBackup } = require('./reorder.js');
@@ -177,14 +177,24 @@ async function sortFlow(favorite) {
     const playlist = await selectPlaylist(favorite);
 
     // 拉曲目 + 计算
-    const s = p.spinner();
-    s.start('📡 正在拉取歌单曲目...');
+    // 分页拉取:已知总数,用进度条逐页推进
+    const trackProg = p.progress();
+    let trackProgStarted = false;
+    let trackLoaded = 0;
     let tracks;
     try {
-      tracks = fetchPlaylistTracks(playlist.id);
-      s.stop(`✅ 共 ${tracks.length} 首`);
+      tracks = fetchPlaylistTracks(playlist.id, (loaded, total) => {
+        if (!trackProgStarted) {
+          trackProgStarted = true;
+          trackProg.start({ total });
+        }
+        trackProg.advance(loaded - trackLoaded);
+        trackLoaded = loaded;
+      });
+      if (trackProgStarted) trackProg.stop(`✅ 共 ${tracks.length} 首`);
+      else p.log.success(`✅ 共 ${tracks.length} 首`);
     } catch (e) {
-      s.stop('❌ 拉取歌单曲目失败');
+      if (trackProgStarted) trackProg.error('❌ 拉取歌单曲目失败');
       p.log.error(ncmErrMsg(e).split('\n')[0]);
       continue; // 换一个歌单
     }
@@ -194,13 +204,28 @@ async function sortFlow(favorite) {
       continue;
     }
 
-    s.start('🔄 正在计算新顺序(可能需要拉取专辑信息)...');
+    // 计算新顺序:专辑数可预统计,用进度条逐张推进
+    const prog = p.progress();
+    let progStarted = false;
+    let albumTotal = 0;
     let newTracks;
     try {
-      newTracks = computeNewOrder(tracks, fetchAlbumTrackOrder);
-      s.stop(`✅ 计算完成,共 ${loadedAlbumCount()} 张专辑`);
+      newTracks = computeNewOrder(tracks, fetchAlbumTrackOrder, {
+        onAlbumStart(count) {
+          albumTotal = count;
+          if (count > 0) {
+            progStarted = true;
+            prog.start({ total: count });
+          }
+        },
+        onAlbumDone() {
+          if (progStarted) prog.advance(1);
+        },
+      });
+      if (progStarted) prog.stop(`✅ 计算完成,共 ${albumTotal} 张专辑`);
+      else p.log.success('✅ 计算完成(无专辑信息,按原顺序)');
     } catch (e) {
-      s.stop('❌ 计算新顺序失败');
+      if (progStarted) prog.error('❌ 计算新顺序失败');
       p.log.error(e.message);
       continue;
     }

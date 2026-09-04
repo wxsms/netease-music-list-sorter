@@ -33,9 +33,13 @@ function artistKey(artist) {
  *
  * @param {Array} tracks 歌单曲目(原顺序)
  * @param {(albumId: string) => string[]} getAlbumTrackOrder 返回专辑内 encId 顺序;抛错时本函数退化为原顺序
+ * @param {object} [hooks] 可选钩子:
+ *   - onAlbumStart(albumCount): 专辑遍历开始时调用一次,告知专辑总数(不含 __no_album__)
+ *   - onAlbumDone(albumId): 每张专辑处理完调用一次(含缓存命中)
  * @returns {Array} 重排后的曲目数组
  */
-function computeNewOrder(tracks, getAlbumTrackOrder) {
+function computeNewOrder(tracks, getAlbumTrackOrder, hooks) {
+  hooks = hooks || {};
   // 1) 按专辑分组
   const albumGroups = new Map(); // albumKey -> [trackIndex...]
   for (let i = 0; i < tracks.length; i++) {
@@ -44,6 +48,8 @@ function computeNewOrder(tracks, getAlbumTrackOrder) {
     if (!albumGroups.has(alKey)) albumGroups.set(alKey, []);
     albumGroups.get(alKey).push(i);
   }
+
+  if (hooks.onAlbumStart) hooks.onAlbumStart([...albumGroups.keys()].filter(k => k !== '__no_album__').length);
 
   // 2) 每张专辑的归属艺人 + 在原歌单中首次位置
   const albumMeta = new Map(); // alKey -> { ownerKey, firstPos }
@@ -92,6 +98,7 @@ function computeNewOrder(tracks, getAlbumTrackOrder) {
         console.error(`[WARN] 拉专辑 ${alKey} 顺序失败: ${e.message},退化为原顺序`);
         albumOrder = [];
       }
+      if (hooks.onAlbumDone) hooks.onAlbumDone(alKey);
 
       const inAlbum = [];
       const outAlbum = [];

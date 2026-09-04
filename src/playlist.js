@@ -35,8 +35,9 @@ function fetchFavoritePlaylistId() {
 
 /**
  * 拉取歌单全部曲目(自动分页,每页 500)。
+ * @param onProgress 可选回调 (loaded, total) => void,每页拉完调用一次。
  */
-function fetchPlaylistTracks(playlistId) {
+function fetchPlaylistTracks(playlistId, onProgress) {
   const meta = runNcm(['playlist', 'get', '--playlistId', playlistId]);
   let total = (meta.data || {}).trackCount || 0;
   if (!total) total = 500;
@@ -56,6 +57,7 @@ function fetchPlaylistTracks(playlistId) {
     if (!page.length) break;
     tracks.push(...page);
     offset += page.length;
+    if (onProgress) onProgress(tracks.length, total);
     if (page.length < limit) break;
   }
 
