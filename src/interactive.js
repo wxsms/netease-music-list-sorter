@@ -4,7 +4,7 @@
  * 交互式向导(@clack/prompts)。
  *
  * 流程: intro → 环境预检 → 主菜单(排序/回滚/退出)
- *   排序分支: 选来源(红心/收藏/创建) → 选歌单 → 拉曲目+计算 → 预览+汇总 → 确认循环 → 提交
+ *   排序分支: 选来源(红心/我创建的) → 选歌单 → 拉曲目+计算 → 预览+汇总 → 确认循环 → 提交
  *   回滚分支: 选备份文件 → 摘要 → 确认 → 提交
  *
  * 约定:
@@ -97,7 +97,6 @@ async function selectPlaylist(favorite) {
       message: '📋 选择歌单来源',
       options: [
         { value: 'favorite', label: `❤️ 红心歌单: ${favorite.name} (${favorite.trackCount} 首)`, hint: '默认' },
-        { value: 'collected', label: '📥 我收藏的歌单' },
         { value: 'created', label: '🎤 我创建的歌单' },
       ],
     }));
@@ -107,7 +106,7 @@ async function selectPlaylist(favorite) {
       return favorite;
     }
 
-    // collected / created:拉列表
+    // created:拉列表(收藏的歌单是别人创建的,服务端只允许创建者 reorder,不提供该来源)
     let playlists;
     const s = p.spinner();
     s.start('📡 正在拉取歌单列表...');

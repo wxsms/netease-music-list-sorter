@@ -52,7 +52,9 @@ ncm-cli user favorite --output table
 npm start        # 或 node cli.js
 ```
 
-流程:环境预检(自动验证 ncm-cli 已安装已登录)→ 选操作(排序 / 回滚 / 退出)→ 选歌单来源(红心 / 收藏 / 创建)→ 选歌单 → 预览新顺序与汇总 → 确认提交。
+流程:环境预检(自动验证 ncm-cli 已安装已登录)→ 选操作(排序 / 回滚 / 退出)→ 选歌单来源(红心 / 我创建的)→ 选歌单 → 预览新顺序与汇总 → 确认提交。
+
+> 收藏的歌单是别人创建的,网易云只允许创建者调整顺序,因此不在可选来源里。
 
 安全设计:
 
@@ -87,7 +89,7 @@ node cli.js sort --playlistId <加密歌单ID> --dry-run
 node cli.js sort --playlistId <加密歌单ID>
 ```
 
-加密歌单 ID 可以通过 `ncm-cli user favorite`(红心)或 `ncm-cli playlist collected / created`(收藏/创建的歌单)拿到,JSON 响应里的 `data.id` 字段就是。
+加密歌单 ID 可以通过 `ncm-cli user favorite`(红心)或 `ncm-cli playlist created`(创建的歌单)拿到,JSON 响应里的 `data.id` 字段就是。
 
 ### sort 子命令完整参数
 
@@ -149,7 +151,7 @@ node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法
 ├── src/
 │   ├── interactive.js # 交互式向导(@clack/prompts)
 │   ├── ncm.js         # ncm-cli 调用(含 Windows 绕过 .cmd shim 的启动方式)
-│   ├── playlist.js    # 红心/收藏/创建歌单列表与曲目拉取
+│   ├── playlist.js    # 红心/创建歌单列表与曲目拉取
 │   ├── album-cache.js # album tracks 三级缓存
 │   ├── sort.js        # 排序核心(纯函数,专辑内顺序回调注入)
 │   ├── backup.js      # 备份/新顺序落盘/备份枚举
