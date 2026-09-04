@@ -58,7 +58,7 @@ npm start        # 或 node cli.js
 
 - 提交前必预览(前 15 首新顺序 + 位置变动统计)并需显式确认,取消不发起任何请求。
 - 交互模式**强制写备份**,提交后 outro 会报告备份文件路径。
-- 内置回滚入口:列出 `output/` 下的备份文件(最新在前),选中确认即可恢复。
+- 内置回滚入口:列出 `.cache/backups/` 下的备份文件(最新在前),选中确认即可恢复。
 
 ### 命令行模式
 
@@ -67,7 +67,7 @@ npm start        # 或 node cli.js
 ```bash
 node cli.js sort --dry-run
 node cli.js sort --playlistId <enc>
-node cli.js rollback output/backup-<playlistId>-<timestamp>.json --dry-run
+node cli.js rollback .cache/backups/backup-<playlistId>-<timestamp>.json --dry-run
 ```
 
 ### 排红心歌单(命令行,默认)
@@ -96,29 +96,30 @@ node cli.js sort --playlistId <加密歌单ID>
 | `--playlistId <enc>` | 加密歌单 ID;不传则默认红心歌单(自动跑 `user favorite` 查询) |
 | `--dry-run` | 只计算新顺序并预览,不提交 |
 | `--no-backup` | 不写备份文件(不推荐,reorder 不可撤销) |
-| `--save-new-order` | 把排序后的新顺序写到 `output/new-order-<playlistId>.json`,便于人工检查 |
+| `--save-new-order` | 把排序后的新顺序写到 `.cache/new-order/new-order-<playlistId>.json`,便于人工检查 |
 
 ## 输出与缓存
 
 | 路径 | 内容 | 是否入库 |
 |------|------|---------|
-| `output/backup-<playlistId>-<timestamp>.json` | 排序前的原始顺序(每次跑都写,带时间戳) | 否(.gitignore) |
-| `output/new-order-<playlistId>.json` | 排序后的新顺序(固定文件名,覆盖写) | 否(.gitignore) |
-| `.cache/album-<albumId>.json` | album tracks 接口的完整返回,跨次运行复用 | 否(.gitignore) |
+| `.cache/backups/backup-<playlistId>-<timestamp>.json` | 排序前的原始顺序(每次跑都写,带时间戳) | 否(.gitignore) |
+| `.cache/new-order/new-order-<playlistId>.json` | 排序后的新顺序(固定文件名,覆盖写) | 否(.gitignore) |
+| `.cache/albums/album-<albumId>.json` | album tracks 接口的完整返回,跨次运行复用 | 否(.gitignore) |
 
 缓存策略:
-- **三级**:进程内 `Map` → 磁盘 `.cache/album-*.json` → ncm-cli 接口。
+- **三级**:进程内 `Map` → 磁盘 `.cache/albums/*.json` → ncm-cli 接口。
 - 缓存的是 album tracks 的**完整返回**(歌名、艺人、时长、专辑内顺序等),其它功能可自由读取。
 - 旧格式缓存(只存 encId 列表)在读取时会被自动忽略并重新拉接口升级。
-- 想强制刷新某张专辑:删除对应的 `.cache/album-<albumId>.json`。
+- 想强制刷新某张专辑:删除对应的 `.cache/albums/album-<albumId>.json`。
+- 旧版平铺在 `output/` 与 `.cache/` 根目录的文件会在首次运行时自动迁移到新结构。
 
 ## 回滚
 
 `cli.js rollback` 把歌单顺序恢复到某个 backup 文件记录的顺序:
 
 ```bash
-node cli.js rollback output/backup-<playlistId>-<timestamp>.json
-node cli.js rollback output/backup-<playlistId>-<timestamp>.json --dry-run
+node cli.js rollback .cache/backups/backup-<playlistId>-<timestamp>.json
+node cli.js rollback .cache/backups/backup-<playlistId>-<timestamp>.json --dry-run
 node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法解析 ID 时手动指定
 ```
 
@@ -154,7 +155,7 @@ node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法
 │   ├── backup.js      # 备份/新顺序落盘/备份枚举
 │   └── reorder.js     # reorder 提交(排序与回滚共用)
 ├── package.json       # 依赖(@clack/prompts + commander)与 npm start
-├── .gitignore         # 忽略 output/ .cache/ node_modules/ 凭据文件等
+├── .gitignore         # 忽略 .cache/ node_modules/ 凭据文件等
 ├── CLAUDE.md          # 给 AI 协作者的提示词
 └── README.md
 ```

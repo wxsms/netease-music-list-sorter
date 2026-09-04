@@ -215,7 +215,7 @@ async function sortFlow(favorite) {
         [
           `歌单: ${playlist.name} (ID ${playlist.id})`,
           `歌曲数: ${newTracks.length}`,
-          `备份: 提交前自动写入 output/`,
+          `备份: 提交前自动写入 .cache/backups/`,
           `保存新顺序文件: ${saveNewOrder ? '是' : '否'}`,
           '',
           '新顺序预览(前 15 首):',
@@ -272,7 +272,7 @@ async function rollbackFlow() {
   const backups = listBackups();
 
   if (!backups.length) {
-    p.log.warn('output/ 目录下没有可用的备份文件');
+    p.log.warn('.cache/backups/ 目录下没有可用的备份文件');
     return; // 回主菜单
   }
 
