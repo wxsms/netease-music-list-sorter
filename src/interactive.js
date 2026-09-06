@@ -337,6 +337,34 @@ async function reorderArtistsPrompt(blocks) {
 
 // ---------- 排序分支 ----------
 
+/**
+ * 排序策略注册表:当前只有默认策略,为将来扩展(如按发行年份、按专辑名)预留。
+ * 每个策略:label 用于选择列表,describe 用于确认环节展示,compute(tracks, getAlbumTrackOrder) 返回新顺序。
+ */
+const SORT_STRATEGIES = [
+  {
+    id: 'album-first',
+    label: '🧩 专辑优先 + 艺人首次出现(默认)',
+    hint: '同专辑连排,艺人按首次出现顺序',
+    describe: '专辑优先 + 艺人首次出现',
+    compute: (tracks, getAlbumTrackOrder) => computeNewOrder(tracks, getAlbumTrackOrder),
+  },
+];
+
+/**
+ * 选择排序策略。返回策略对象;取消走 bail。
+ */
+async function selectSortStrategy() {
+  return guard(await p.select({
+    message: '🧮 选择排序策略',
+    options: SORT_STRATEGIES.map(s => ({
+      value: s,
+      label: s.label,
+      hint: s.hint,
+    })),
+  }));
+}
+
 function previewLines(oldTracks, newTracks, n = 15) {
   const lines = [];
   const limit = Math.min(n, newTracks.length);
@@ -363,6 +391,9 @@ async function sortFlow(favorite) {
   // 外层循环:换一个歌单时回到选歌单
   for (;;) {
     const playlist = await selectPlaylist(favorite);
+
+    // 选排序策略(当前只有默认策略,为将来扩展预留)
+    const strategy = await selectSortStrategy();
 
     // 拉曲目 + 计算
     // 拉取全程反馈:开始(0/total)就有 spinner 帧,分页推进进度条,结束出结果
@@ -405,9 +436,9 @@ async function sortFlow(favorite) {
     }
 
     try {
-      newTracks = computeNewOrder(tracks, fetchAlbumTrackOrder);
-      if (albumIds.length > 0) p.log.success(`✅ 计算完成,共 ${albumIds.length} 张专辑`);
-      else p.log.success('✅ 计算完成(无专辑信息,按原顺序)');
+      newTracks = strategy.compute(tracks, fetchAlbumTrackOrder);
+      if (albumIds.length > 0) p.log.success(`✅ 计算完成(${strategy.describe}),共 ${albumIds.length} 张专辑`);
+      else p.log.success(`✅ 计算完成(${strategy.describe},无专辑信息,按原顺序)`);
     } catch (e) {
       p.log.error(e.message);
       continue;
@@ -421,6 +452,7 @@ async function sortFlow(favorite) {
       p.note(
         [
           `歌单: ${playlist.name} (ID ${playlist.id})`,
+          `排序策略: ${strategy.describe}`,
           `歌曲数: ${newTracks.length}`,
           `备份: 提交前自动写入 .cache/backups/`,
           `保存新顺序文件: ${saveNewOrder ? '是' : '否'}`,
@@ -462,7 +494,16 @@ async function sortFlow(favorite) {
         continue; // 回确认环节,预览自动刷新
       }
 
-      // submit:强制备份 → 可选新顺序文件 → 提交
+      // submit:二次确认(reorder 不可撤销) → 强制备份 → 可选新顺序文件 → 提交
+      const confirmed = guard(await p.confirm({
+        message: `⚠️  即将提交 ${newTracks.length} 首的新顺序到「${playlist.name}」,云端不可撤销。确认提交?`,
+        initialValue: false,
+      }));
+      if (!confirmed) {
+        p.log.info('已取消提交,回到确认环节');
+        continue;
+      }
+
       const backupPath = writeBackup(playlist.id, tracks);
       if (saveNewOrder) {
         const newPath = writeNewOrder(playlist.id, newTracks);
