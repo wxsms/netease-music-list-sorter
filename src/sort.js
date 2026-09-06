@@ -47,29 +47,32 @@ function collectAlbumIds(tracks) {
 /**
  * 从(已按歌手块排列的)曲目序列中提取歌手块。
  *
- * 线性扫描:连续同 artistKey 的段即一个块。用于对 computeNewOrder 的输出
- * 做块级调整——输出本身已按"歌手块"排列,反推保证所见即所得。
+ * 全局按 artistKey 合并:同一歌手的所有段合成一个块(曲目按出现顺序拼接)。
+ * 这与排序规则"同一艺人的多张专辑挨着出现"一致——合辑场景下同一歌手会出现在
+ * 多张不同合辑里,产生多个同名块,合并后调整界面不再出现重复歌手项。
  *
  * @param {Array} tracks 已按歌手块排列的曲目(如 computeNewOrder 的输出)
  * @returns {Array} [{ artistKey, displayName, tracks }],块内 track 对象与输入共享引用
  */
 function extractArtistBlocks(tracks) {
-  const blocks = [];
+  const byKey = new Map(); // artistKey -> block(保持首次出现顺序)
+  const order = [];
   for (const t of tracks) {
     const key = artistKey(firstArtist(t));
-    const last = blocks[blocks.length - 1];
-    if (last && last.artistKey === key) {
-      last.tracks.push(t);
-    } else {
+    let block = byKey.get(key);
+    if (!block) {
       const artist = firstArtist(t);
-      blocks.push({
+      block = {
         artistKey: key,
         displayName: (artist && artist.name) || '(无歌手信息)',
-        tracks: [t],
-      });
+        tracks: [],
+      };
+      byKey.set(key, block);
+      order.push(key);
     }
+    block.tracks.push(t);
   }
-  return blocks;
+  return order.map(k => byKey.get(k));
 }
 
 /**
