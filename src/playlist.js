@@ -35,12 +35,13 @@ function fetchFavoritePlaylistId() {
 
 /**
  * 拉取歌单全部曲目(自动分页,每页 500)。
- * @param onProgress 可选回调 (loaded, total) => void,每页拉完调用一次。
+ * @param onProgress 可选回调 (loaded, total) => void:开始时(0,total)、每页拉完、结束时(total,total)各触发一次。
  */
 function fetchPlaylistTracks(playlistId, onProgress) {
   const meta = runNcm(['playlist', 'get', '--playlistId', playlistId]);
   let total = (meta.data || {}).trackCount || 0;
   if (!total) total = 500;
+  if (onProgress) onProgress(0, total);
 
   const PAGE = 500;
   const tracks = [];
@@ -60,6 +61,7 @@ function fetchPlaylistTracks(playlistId, onProgress) {
     if (onProgress) onProgress(tracks.length, total);
     if (page.length < limit) break;
   }
+  if (onProgress) onProgress(tracks.length, Math.max(tracks.length, total));
 
   if (tracks.length < total) {
     console.error(`[WARN] 期望 ${total} 首,只拿到 ${tracks.length} 首。可能是接口分页变化或部分歌曲已下架。`);

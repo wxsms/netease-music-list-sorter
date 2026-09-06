@@ -87,6 +87,42 @@ function makeSyncProgress() {
   };
 }
 
+/**
+ * 同步 spinner:帧动画直写 stdout(\r 重绘)。
+ *
+ * 与 makeSyncProgress 同理:clack 的 spinner 靠 setInterval 重绘,
+ * 包同步操作(spawnSync)时一帧都动不了,只剩一条静止的 │ 线。
+ * 这里在 start/step 显式推进帧,适合包在同步调用前后/回调里。
+ */
+function makeSyncSpinner() {
+  const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let frame = 0;
+  let lastLen = 0;
+  let active = false;
+  const isTTY = !!process.stdout.isTTY;
+
+  return {
+    /** 开始/更新:显示带帧动画的消息。 */
+    start(msg) {
+      if (!isTTY) return;
+      const line = `${FRAMES[frame]}  ${msg}`;
+      process.stdout.write('\r' + ' '.repeat(lastLen) + '\r' + line);
+      lastLen = line.length;
+      frame = (frame + 1) % FRAMES.length;
+      active = true;
+    },
+    /** 清掉 spinner 行并输出完成信息(成功/失败由调用方决定文案)。 */
+    stop(msg) {
+      if (active && isTTY) {
+        process.stdout.write('\r' + ' '.repeat(lastLen) + '\r');
+        active = false;
+        lastLen = 0;
+      }
+      if (msg) p.log.success(msg);
+    },
+  };
+}
+
 // ---------- 环境预检 ----------
 
 /**
@@ -147,13 +183,13 @@ async function selectPlaylist(favorite) {
 
     // created:拉列表(收藏的歌单是别人创建的,服务端只允许创建者 reorder,不提供该来源)
     let playlists;
-    const s = p.spinner();
+    const s = makeSyncSpinner();
     s.start('📡 正在拉取歌单列表...');
     try {
       playlists = fetchPlaylistList(source);
       s.stop(`✅ 拉到 ${playlists.length} 个歌单`);
     } catch (e) {
-      s.stop('❌ 拉取歌单列表失败');
+      s.stop();
       const retry = guard(await p.select({
         message: `拉取失败: ${ncmErrMsg(e).slice(0, 200).split('\n')[0]}`,
         options: [
@@ -329,12 +365,17 @@ async function sortFlow(favorite) {
     const playlist = await selectPlaylist(favorite);
 
     // 拉曲目 + 计算
-    // 分页拉取:已知总数,用进度条逐页推进
+    // 拉取全程反馈:开始(0/total)就有 spinner 帧,分页推进进度条,结束出结果
     const trackProg = makeSyncProgress();
     let tracks;
     try {
       tracks = fetchPlaylistTracks(playlist.id, (loaded, total) => {
-        trackProg.update(loaded, total, '拉取歌单曲目');
+        if (loaded === 0) {
+          // 开始阶段:总数已知但还没拉到,进度条 0% + spinner 帧
+          trackProg.update(0, total, '拉取歌单曲目');
+        } else {
+          trackProg.update(loaded, total, '拉取歌单曲目');
+        }
       });
       trackProg.finish(`✅ 共 ${tracks.length} 首`);
     } catch (e) {
@@ -428,13 +469,13 @@ async function sortFlow(favorite) {
         p.log.info(`新顺序已写入 ${newPath}`);
       }
 
-      const s2 = p.spinner();
+      const s2 = makeSyncSpinner();
       s2.start('🚀 正在提交 reorder...');
       try {
         submitReorder(playlist.id, newTracks.map(t => t.id).filter(Boolean));
         s2.stop('✅ 提交成功');
       } catch (e) {
-        s2.stop('❌ 提交失败');
+        s2.stop();
         p.log.error(ncmErrMsg(e).split('\n')[0]);
         p.log.info(`原顺序备份在: ${backupPath}`);
         process.exit(1);
@@ -479,14 +520,14 @@ async function rollbackFlow() {
   }));
   if (!go) bail();
 
-  const s = p.spinner();
+  const s = makeSyncSpinner();
   s.start('🚀 正在提交回滚 reorder...');
   try {
     const { encIds } = readBackup(chosen.path);
     rollbackFromBackup(chosen.playlistId, encIds);
     s.stop('✅ 回滚完成');
   } catch (e) {
-    s.stop('❌ 回滚失败');
+    s.stop();
     p.log.error(ncmErrMsg(e).split('\n')[0]);
     process.exit(1);
   }
