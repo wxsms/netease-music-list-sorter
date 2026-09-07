@@ -1,8 +1,15 @@
 # netease-music-list-sorter
 
-按"专辑优先 + 艺人首次出现"规则重排网易云音乐歌单的 Node.js 脚本。
+[![CI](https://github.com/wxsms/netease-music-list-sorter/actions/workflows/main.yml/badge.svg)](https://github.com/wxsms/netease-music-list-sorter/actions/workflows/main.yml)
+
+按"专辑优先 + 艺人首次出现"规则重排网易云音乐歌单的 Node.js CLI 工具。
 
 通过 [`ncm-cli`](https://www.npmjs.com/package/@music163/ncm-cli) 拉取歌单与专辑数据,本地计算新顺序后,调 `ncm-cli playlist reorder` 一次性提交到云端。
+
+提供两种用法:
+
+- **交互式向导**(推荐):`npm start`,按步骤选歌单 → 预览 → 确认提交,无需记参数。
+- **命令行模式**:`node cli.js sort` / `node cli.js rollback`,适合熟练用户与自动化。
 
 ## 适用场景
 
@@ -37,60 +44,87 @@ ncm-cli --version
 ncm-cli user favorite --output table
 ```
 
-脚本本身**只依赖 Node 标准库**(`child_process` / `fs` / `path`),不需要 `npm install`。
+克隆后跑一次 `npm install` 安装依赖(`@clack/prompts` + `commander`)即可使用全部功能。
 
 ## 使用
 
-### 排红心歌单(默认)
+### 交互式向导(推荐)
+
+```bash
+npm start        # 或 node cli.js
+```
+
+流程:环境预检(自动验证 ncm-cli 已安装已登录)→ 选操作(排序 / 回滚 / 退出)→ 选歌单来源(红心 / 我创建的)→ 选歌单 → 预览新顺序与汇总 → 确认提交。
+
+> 收藏的歌单是别人创建的,网易云只允许创建者调整顺序,因此不在可选来源里。
+
+安全设计:
+
+- 提交前必预览(前 15 首新顺序 + 位置变动统计)并需显式确认,取消不发起任何请求。
+- 交互模式**强制写备份**,提交后 outro 会报告备份文件路径。
+- 内置回滚入口:列出 `.cache/backups/` 下的备份文件(最新在前),选中确认即可恢复。
+
+### 命令行模式
+
+`cli.js` 支持带子命令运行:
+
+```bash
+node cli.js sort --dry-run
+node cli.js sort --playlistId <enc>
+node cli.js rollback .cache/backups/<playlistId>-<timestamp>.json --dry-run
+```
+
+### 排红心歌单(命令行,默认)
 
 ```bash
 # 先预览,不提交
-node sort-playlist.js --dry-run
+node cli.js sort --dry-run
 
 # 实际提交
-node sort-playlist.js
+node cli.js sort
 ```
 
 ### 排指定歌单
 
 ```bash
-node sort-playlist.js --playlistId <加密歌单ID> --dry-run
-node sort-playlist.js --playlistId <加密歌单ID>
+node cli.js sort --playlistId <加密歌单ID> --dry-run
+node cli.js sort --playlistId <加密歌单ID>
 ```
 
-加密歌单 ID 可以通过 `ncm-cli user favorite`(红心)或 `ncm-cli playlist collected / created`(收藏/创建的歌单)拿到,JSON 响应里的 `data.id` 字段就是。
+加密歌单 ID 可以通过 `ncm-cli user favorite`(红心)或 `ncm-cli playlist created`(创建的歌单)拿到,JSON 响应里的 `data.id` 字段就是。
 
-### 完整参数
+### sort 子命令完整参数
 
 | 参数 | 说明 |
 |------|------|
 | `--playlistId <enc>` | 加密歌单 ID;不传则默认红心歌单(自动跑 `user favorite` 查询) |
 | `--dry-run` | 只计算新顺序并预览,不提交 |
 | `--no-backup` | 不写备份文件(不推荐,reorder 不可撤销) |
-| `--save-new-order` | 把排序后的新顺序写到 `output/new-order-<playlistId>.json`,便于人工检查 |
+| `--save-new-order` | 把排序后的新顺序写到 `.cache/new-order/<playlistId>.json`,便于人工检查 |
 
 ## 输出与缓存
 
 | 路径 | 内容 | 是否入库 |
 |------|------|---------|
-| `output/backup-<playlistId>-<timestamp>.json` | 排序前的原始顺序(每次跑都写,带时间戳) | 否(.gitignore) |
-| `output/new-order-<playlistId>.json` | 排序后的新顺序(固定文件名,覆盖写) | 否(.gitignore) |
-| `.cache/album-<albumId>.json` | album tracks 接口的完整返回,跨次运行复用 | 否(.gitignore) |
+| `.cache/backups/<playlistId>-<timestamp>.json` | 排序前的原始顺序(每次跑都写,带时间戳) | 否(.gitignore) |
+| `.cache/new-order/<playlistId>.json` | 排序后的新顺序(固定文件名,覆盖写) | 否(.gitignore) |
+| `.cache/albums/<albumId>.json` | album tracks 接口的完整返回,跨次运行复用 | 否(.gitignore) |
 
 缓存策略:
-- **三级**:进程内 `Map` → 磁盘 `.cache/album-*.json` → ncm-cli 接口。
+- **三级**:进程内 `Map` → 磁盘 `.cache/albums/*.json` → ncm-cli 接口。
 - 缓存的是 album tracks 的**完整返回**(歌名、艺人、时长、专辑内顺序等),其它功能可自由读取。
 - 旧格式缓存(只存 encId 列表)在读取时会被自动忽略并重新拉接口升级。
-- 想强制刷新某张专辑:删除对应的 `.cache/album-<albumId>.json`。
+- 想强制刷新某张专辑:删除对应的 `.cache/albums/<albumId>.json`。
+- 旧版平铺在 `output/` 与 `.cache/` 根目录的文件会在首次运行时自动迁移到新结构。
 
 ## 回滚
 
-`rollback.js` 把歌单顺序恢复到某个 backup 文件记录的顺序:
+`cli.js rollback` 把歌单顺序恢复到某个 backup 文件记录的顺序:
 
 ```bash
-node rollback.js output/backup-<playlistId>-<timestamp>.json
-node rollback.js output/backup-<playlistId>-<timestamp>.json --dry-run
-node rollback.js <backup.json> --playlistId <enc>   # backup 文件名无法解析 ID 时手动指定
+node cli.js rollback .cache/backups/<playlistId>-<timestamp>.json
+node cli.js rollback .cache/backups/<playlistId>-<timestamp>.json --dry-run
+node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法解析 ID 时手动指定
 ```
 
 ## Windows 平台注意事项
@@ -115,14 +149,37 @@ node rollback.js <backup.json> --playlistId <enc>   # backup 文件名无法解�
 
 ```
 .
-├── sort-playlist.js   # 主脚本:拉歌单 → 计算 → 提交 reorder
-├── rollback.js        # 从 backup 文件回滚歌单顺序
-├── .gitignore         # 忽略 output/ .cache/ 凭据文件等
+├── cli.js             # CLI 入口:无参数进交互向导,带参数走命令行模式
+├── src/
+│   ├── interactive.js # 交互式向导(@clack/prompts)
+│   ├── ncm.js         # ncm-cli 调用(含 Windows 绕过 .cmd shim 的启动方式)
+│   ├── playlist.js    # 红心/创建歌单列表与曲目拉取
+│   ├── album-cache.js # album tracks 三级缓存
+│   ├── sort.js        # 排序核心(纯函数,专辑内顺序回调注入)
+│   ├── backup.js      # 备份/新顺序落盘/备份枚举
+│   └── reorder.js     # reorder 提交(排序与回滚共用)
+├── tests/             # 单元测试(node:test)
+├── .github/workflows/ # CI(lint / test / 冒烟 / audit / openspec)
+├── package.json       # 依赖(@clack/prompts + commander)与 npm start
+├── eslint.config.js   # ESLint 扁平配置
+├── .gitignore         # 忽略 .cache/ node_modules/ 凭据文件等
 ├── CLAUDE.md          # 给 AI 协作者的提示词
 └── README.md
 ```
 
 ## 依赖范围
 
-仅使用 Node.js 标准库(`child_process` / `fs` / `path`),不安装任何 npm 包。
+`@clack/prompts`(交互组件)+ `commander`(参数解析),见 `package.json`;其余仅用 Node.js 标准库。
+
+## 开发
+
+```bash
+npm run lint              # ESLint 检查
+npm test                  # 单元测试(node:test,零额外依赖)
+npm run openspec:validate # openspec 规格与归档变更校验
+```
+
+单元测试在 `tests/`,只覆盖纯函数(排序核心、备份文件名解析等),不碰网络与 `.cache/` 目录。
+
+CI(GitHub Actions)在 push `master` 与 PR 时跑同样的检查:lint / test / CLI 冒烟 / `npm audit` / openspec 校验,见 `.github/workflows/`。
 
