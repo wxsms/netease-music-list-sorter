@@ -20,7 +20,7 @@ const readline = require('readline');
 const require_ = createRequire(__filename);
 const pkg = require_('../package.json');
 
-const { runNcm, NcmError } = require('./ncm.js');
+const { NcmError } = require('./ncm.js');
 const {
   fetchFavoritePlaylist, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
@@ -294,7 +294,7 @@ async function reorderArtistsPrompt(blocks) {
       if (settled) return;
       settled = true;
       stdin.removeListener('keypress', onKey);
-      try { stdin.setRawMode(false); } catch (e) { /* 已恢复则忽略 */ }
+      try { stdin.setRawMode(false); } catch { /* 已恢复则忽略 */ }
       stdin.resume();
       eraseFrame();
       if (exitWizard) bail(); // process.exit(0),无云端请求

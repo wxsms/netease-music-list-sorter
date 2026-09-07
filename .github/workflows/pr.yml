@@ -1,0 +1,65 @@
+name: pull request
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: node cli.js --help
+      - run: node cli.js --version
+      - run: node cli.js sort --help
+      - run: node cli.js rollback --help
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm audit --audit-level moderate
+
+  openspec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run openspec:validate

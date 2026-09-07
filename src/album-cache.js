@@ -58,7 +58,7 @@ function fetchAlbumTracks(albumId) {
         albumCache.set(albumId, rows);
         return rows;
       }
-    } catch (e) {
+    } catch {
       // 缓存损坏,继续走接口
     }
   }
@@ -108,7 +108,7 @@ async function prefetchAlbums(albumIds, onProgress, concurrency = 8) {
           albumCache.set(id, rows);
           hit = true;
         }
-      } catch (e) { /* 缓存损坏,走接口 */ }
+      } catch { /* 缓存损坏,走接口 */ }
     }
     if (hit) cached++; else pending.push(id);
   }
@@ -131,7 +131,7 @@ async function prefetchAlbums(albumIds, onProgress, concurrency = 8) {
         fs.mkdirSync(ALBUM_DIR, { recursive: true });
         fs.writeFileSync(cachePathForAlbum(id), JSON.stringify(rows, null, 2), 'utf8');
         fetched++;
-      } catch (e) {
+      } catch {
         failed++;
       }
       done++;

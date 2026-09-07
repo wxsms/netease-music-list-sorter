@@ -26,13 +26,13 @@ const LEGACY_OUTPUT_DIR = path.join(REPO_ROOT, 'output');
  */
 function migrateLegacyOutput() {
   const moves = [
-    // [源目录, 目标目录, 文件名匹配, 去掉的前缀]
-    { from: LEGACY_OUTPUT_DIR, to: BACKUP_DIR, pattern: /^backup-(.+\.json)$/, strip: 'backup-' },
-    { from: LEGACY_OUTPUT_DIR, to: NEW_ORDER_DIR, pattern: /^new-order-(.+\.json)$/, strip: 'new-order-' },
-    { from: BACKUP_DIR, to: BACKUP_DIR, pattern: /^backup-(.+\.json)$/, strip: 'backup-' },
-    { from: NEW_ORDER_DIR, to: NEW_ORDER_DIR, pattern: /^new-order-(.+\.json)$/, strip: 'new-order-' },
+    // [源目录, 目标目录, 文件名匹配(捕获组 1 = 去掉前缀后的文件名)]
+    { from: LEGACY_OUTPUT_DIR, to: BACKUP_DIR, pattern: /^backup-(.+\.json)$/ },
+    { from: LEGACY_OUTPUT_DIR, to: NEW_ORDER_DIR, pattern: /^new-order-(.+\.json)$/ },
+    { from: BACKUP_DIR, to: BACKUP_DIR, pattern: /^backup-(.+\.json)$/ },
+    { from: NEW_ORDER_DIR, to: NEW_ORDER_DIR, pattern: /^new-order-(.+\.json)$/ },
   ];
-  for (const { from, to, pattern, strip } of moves) {
+  for (const { from, to, pattern } of moves) {
     if (!fs.existsSync(from)) continue;
     for (const f of fs.readdirSync(from)) {
       const m = f.match(pattern);
@@ -47,7 +47,7 @@ function migrateLegacyOutput() {
     if (fs.existsSync(LEGACY_OUTPUT_DIR) && fs.readdirSync(LEGACY_OUTPUT_DIR).length === 0) {
       fs.rmdirSync(LEGACY_OUTPUT_DIR);
     }
-  } catch (e) {
+  } catch {
     // 删除失败不影响功能
   }
 }
@@ -111,7 +111,7 @@ function listBackups() {
     try {
       const data = JSON.parse(fs.readFileSync(full, 'utf8'));
       if (Array.isArray(data)) trackCount = data.length;
-    } catch (e) {
+    } catch {
       // 损坏的备份文件:仍列出,trackCount 为 null
     }
     out.push({ path: full, playlistId, trackCount });

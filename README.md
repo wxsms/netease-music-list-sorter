@@ -1,5 +1,7 @@
 # netease-music-list-sorter
 
+[![CI](https://github.com/wxsms/netease-music-list-sorter/actions/workflows/main.yml/badge.svg)](https://github.com/wxsms/netease-music-list-sorter/actions/workflows/main.yml)
+
 按"专辑优先 + 艺人首次出现"规则重排网易云音乐歌单的 Node.js CLI 工具。
 
 通过 [`ncm-cli`](https://www.npmjs.com/package/@music163/ncm-cli) 拉取歌单与专辑数据,本地计算新顺序后,调 `ncm-cli playlist reorder` 一次性提交到云端。
@@ -156,7 +158,10 @@ node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法
 │   ├── sort.js        # 排序核心(纯函数,专辑内顺序回调注入)
 │   ├── backup.js      # 备份/新顺序落盘/备份枚举
 │   └── reorder.js     # reorder 提交(排序与回滚共用)
+├── tests/             # 单元测试(node:test)
+├── .github/workflows/ # CI(lint / test / 冒烟 / audit / openspec)
 ├── package.json       # 依赖(@clack/prompts + commander)与 npm start
+├── eslint.config.js   # ESLint 扁平配置
 ├── .gitignore         # 忽略 .cache/ node_modules/ 凭据文件等
 ├── CLAUDE.md          # 给 AI 协作者的提示词
 └── README.md
@@ -165,4 +170,16 @@ node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法
 ## 依赖范围
 
 `@clack/prompts`(交互组件)+ `commander`(参数解析),见 `package.json`;其余仅用 Node.js 标准库。
+
+## 开发
+
+```bash
+npm run lint              # ESLint 检查
+npm test                  # 单元测试(node:test,零额外依赖)
+npm run openspec:validate # openspec 规格与归档变更校验
+```
+
+单元测试在 `tests/`,只覆盖纯函数(排序核心、备份文件名解析等),不碰网络与 `.cache/` 目录。
+
+CI(GitHub Actions)在 push `master` 与 PR 时跑同样的检查:lint / test / CLI 冒烟 / `npm audit` / openspec 校验,见 `.github/workflows/`。
 
