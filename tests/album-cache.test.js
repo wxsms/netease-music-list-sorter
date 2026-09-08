@@ -3,9 +3,9 @@
 /**
  * album-cache.js 单元测试(Jest)。
  *
- * 通过 NCM_SORTER_HOME 环境变量把缓存目录指到 os.tmpdir() 下的隔离目录,
- * 并用 jest.isolateModules 每次拿到内存 Map 缓存为空的干净模块实例。
- * ncm.js 依赖用标准 jest.mock 替换(不打真实请求)。
+ * 通过 NCM_SORTER_CACHE_HOME 环境变量把缓存目录(cache-home.js 解析)
+ * 指到 os.tmpdir() 下的隔离目录,并用 jest.isolateModules 每次拿到
+ * 内存 Map 缓存为空的干净模块实例。ncm.js 依赖用标准 jest.mock 替换。
  */
 
 const fs = require('fs');
@@ -19,19 +19,19 @@ jest.mock('../src/ncm.js', () => ({
 
 const { runNcm, runNcmAsync } = require('../src/ncm.js');
 
-/** 在临时根目录下加载 album-cache 模块,返回 { mod, root, albumDir }。 */
+/** 在临时缓存目录下加载 album-cache 模块,返回 { mod, root, albumDir }。 */
 function loadModule() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ncm-sorter-album-'));
-  process.env.NCM_SORTER_HOME = root;
+  process.env.NCM_SORTER_CACHE_HOME = root;
   let mod;
   jest.isolateModules(() => {
     mod = require('../src/album-cache.js');
   });
-  delete process.env.NCM_SORTER_HOME;
+  delete process.env.NCM_SORTER_CACHE_HOME;
   return {
     mod,
     root,
-    albumDir: path.join(root, '.cache', 'albums'),
+    albumDir: path.join(root, 'albums'),
   };
 }
 
@@ -193,8 +193,8 @@ describe('prefetchAlbums', () => {
       const result = await mod.prefetchAlbums(['BAD', 'GOOD'], null, 2);
       expect(result).toEqual({ fetched: 1, failed: 1, cached: 0 });
       // 失败的没落盘,成功的落盘
-      expect(fs.existsSync(path.join(root, '.cache', 'albums', 'GOOD.json'))).toBe(true);
-      expect(fs.existsSync(path.join(root, '.cache', 'albums', 'BAD.json'))).toBe(false);
+      expect(fs.existsSync(path.join(root, 'albums', 'GOOD.json'))).toBe(true);
+      expect(fs.existsSync(path.join(root, 'albums', 'BAD.json'))).toBe(false);
     } finally {
       cleanup(root);
     }
@@ -227,19 +227,33 @@ describe('prefetchAlbums', () => {
 // ---------- 旧版缓存迁移 ----------
 
 describe('migrateLegacyAlbumCache(经 fetchAlbumTracks 触发)', () => {
-  test('.cache/ 根目录的 album-*.json 迁移到 albums/ 并去前缀', () => {
-    const { mod, root, albumDir } = loadModule();
+  test('仓库 .cache/ 根目录的 album-*.json 迁移到新缓存目录并去前缀', () => {
+    // 迁移源路径基于模块 __dirname,把模块拷到 tmp 下使源目录落到 tmp
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ncm-sorter-album-legacy-'));
+    const srcDir = path.join(root, 'src');
+    fs.mkdirSync(srcDir, { recursive: true });
+    for (const f of ['album-cache.js', 'cache-home.js', 'ncm.js']) {
+      fs.copyFileSync(path.join(__dirname, '..', 'src', f), path.join(srcDir, f));
+    }
+    const cacheHome = path.join(root, 'cache-home');
+    process.env.NCM_SORTER_CACHE_HOME = cacheHome;
+    let mod;
+    jest.isolateModules(() => {
+      mod = require(path.join(srcDir, 'album-cache.js'));
+    });
+    delete process.env.NCM_SORTER_CACHE_HOME;
     try {
-      const cacheRoot = path.join(root, '.cache');
-      fs.mkdirSync(cacheRoot, { recursive: true });
-      fs.writeFileSync(path.join(cacheRoot, 'album-OLD1.json'), JSON.stringify([row('o1')]));
+      const legacyCacheRoot = path.join(root, '.cache');
+      fs.mkdirSync(legacyCacheRoot, { recursive: true });
+      fs.writeFileSync(path.join(legacyCacheRoot, 'album-OLD1.json'), JSON.stringify([row('o1')]));
       runNcm.mockReturnValue({ code: 200, data: [row('fresh')] });
 
       // 触发迁移:访问任意专辑
       mod.fetchAlbumTracks('TRIGGER');
 
+      const albumDir = path.join(cacheHome, 'albums');
       expect(fs.existsSync(path.join(albumDir, 'OLD1.json'))).toBe(true);
-      expect(fs.existsSync(path.join(cacheRoot, 'album-OLD1.json'))).toBe(false);
+      expect(fs.existsSync(path.join(legacyCacheRoot, 'album-OLD1.json'))).toBe(false);
     } finally {
       cleanup(root);
     }

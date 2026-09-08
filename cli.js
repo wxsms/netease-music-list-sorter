@@ -169,7 +169,7 @@ if (process.argv.length <= 2) {
     .option('--playlistId <enc>', '加密歌单 ID;不传则默认红心歌单')
     .option('--dry-run', '只计算新顺序并预览,不提交')
     .option('--no-backup', '不写备份文件(不推荐,reorder 不可撤销)')
-    .option('--save-new-order', '把排序后的新顺序写到 .cache/new-order/<playlistId>.json')
+    .option('--save-new-order', '把排序后的新顺序写到 <缓存目录>/new-order/<playlistId>.json')
     .action(runSort);
 
   program

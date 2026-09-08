@@ -533,7 +533,7 @@ async function rollbackFlow() {
   const backups = listBackups();
 
   if (!backups.length) {
-    p.log.warn('.cache/backups/ 目录下没有可用的备份文件');
+    p.log.warn('缓存目录 backups/ 下没有可用的备份文件');
     return; // 回主菜单
   }
 

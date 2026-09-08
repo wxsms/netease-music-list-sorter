@@ -4,30 +4,64 @@
  * backup.js 落盘类函数单元测试(Jest)。
  *
  * writeBackup/writeNewOrder/listBackups/migrateLegacyOutput 会写真实目录,
- * 这里通过 NCM_SORTER_HOME 环境变量把仓库根目录指到 os.tmpdir() 下的
- * 隔离目录,并用 jest.isolateModules 每次拿到目录常量已绑定的干净模块实例,
- * 避免污染仓库的 .cache/。
+ * 这里通过 NCM_SORTER_CACHE_HOME 环境变量把缓存目录(cache-home.js 解析)
+ * 指到 os.tmpdir() 下的隔离目录,并用 jest.isolateModules 每次拿到
+ * 目录常量已绑定的干净模块实例,避免污染用户真实缓存目录。
+ *
+ * 旧版迁移的源目录固定在仓库内(output/ 与 .cache/),测试里通过在
+ * 临时目录重建同样的相对结构来覆盖——migrateLegacyOutput 的源路径
+ * 基于 __dirname,因此迁移用例沿用"临时仓库"思路:把 backup.js 连同
+ * cache-home.js 拷到 tmp 下 require,使 __dirname 指向 tmp。
  */
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-/** 在临时根目录下加载 backup 模块,返回 { mod, root, backupDir, newOrderDir, legacyOutputDir }。 */
+/** 在临时缓存目录下加载 backup 模块(常规用例)。 */
 function loadModule() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ncm-sorter-test-'));
-  process.env.NCM_SORTER_HOME = root;
+  process.env.NCM_SORTER_CACHE_HOME = root;
   let mod;
   jest.isolateModules(() => {
     mod = require('../src/backup.js');
   });
-  delete process.env.NCM_SORTER_HOME;
+  delete process.env.NCM_SORTER_CACHE_HOME;
   return {
     mod,
     root,
-    backupDir: path.join(root, '.cache', 'backups'),
-    newOrderDir: path.join(root, '.cache', 'new-order'),
+    backupDir: path.join(root, 'backups'),
+    newOrderDir: path.join(root, 'new-order'),
+  };
+}
+
+/**
+ * 迁移用例:在临时目录构建"迷你仓库"(src/ 拷贝 backup.js + cache-home.js + sort.js),
+ * 使模块的 __dirname 指向 tmp,LEGACY 路径(output/、.cache/)随之落到 tmp 内。
+ */
+function loadModuleWithLegacyDirs() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ncm-sorter-legacy-'));
+  const srcDir = path.join(root, 'src');
+  fs.mkdirSync(srcDir, { recursive: true });
+  for (const f of ['sort.js', 'backup.js', 'cache-home.js']) {
+    fs.copyFileSync(path.join(__dirname, '..', 'src', f), path.join(srcDir, f));
+  }
+  const cacheHome = path.join(root, 'cache-home');
+  process.env.NCM_SORTER_CACHE_HOME = cacheHome;
+  let mod;
+  jest.isolateModules(() => {
+    mod = require(path.join(srcDir, 'backup.js'));
+  });
+  delete process.env.NCM_SORTER_CACHE_HOME;
+  return {
+    mod,
+    root,
+    cacheHome,
+    backupDir: path.join(cacheHome, 'backups'),
+    newOrderDir: path.join(cacheHome, 'new-order'),
     legacyOutputDir: path.join(root, 'output'),
+    legacyCacheBackups: path.join(root, '.cache', 'backups'),
+    legacyCacheNewOrder: path.join(root, '.cache', 'new-order'),
   };
 }
 
@@ -163,8 +197,8 @@ describe('readBackup', () => {
 // ---------- migrateLegacyOutput ----------
 
 describe('migrateLegacyOutput', () => {
-  test('旧 output/ 平铺文件迁移到新目录并去掉前缀', () => {
-    const { mod, backupDir, newOrderDir, legacyOutputDir, root } = loadModule();
+  test('旧 output/ 平铺文件迁移到新缓存目录并去掉前缀', () => {
+    const { mod, backupDir, newOrderDir, legacyOutputDir, root } = loadModuleWithLegacyDirs();
     try {
       fs.mkdirSync(legacyOutputDir, { recursive: true });
       fs.writeFileSync(path.join(legacyOutputDir, 'backup-AAA-20260101-000000.json'), '[]');
@@ -181,7 +215,25 @@ describe('migrateLegacyOutput', () => {
     }
   });
 
-  test('.cache/ 子目录内带前缀的文件也会被重命名', () => {
+  test('仓库 .cache/ 子目录内带前缀的文件迁移到新缓存目录', () => {
+    const { mod, backupDir, newOrderDir, legacyCacheBackups, legacyCacheNewOrder, root } = loadModuleWithLegacyDirs();
+    try {
+      fs.mkdirSync(legacyCacheBackups, { recursive: true });
+      fs.mkdirSync(legacyCacheNewOrder, { recursive: true });
+      fs.writeFileSync(path.join(legacyCacheBackups, 'backup-AAA-20260101-000000.json'), '[]');
+      fs.writeFileSync(path.join(legacyCacheNewOrder, 'new-order-CCC.json'), '[]');
+
+      mod.migrateLegacyOutput();
+
+      expect(fs.existsSync(path.join(backupDir, 'AAA-20260101-000000.json'))).toBe(true);
+      expect(fs.existsSync(path.join(newOrderDir, 'CCC.json'))).toBe(true);
+      expect(fs.existsSync(path.join(legacyCacheBackups, 'backup-AAA-20260101-000000.json'))).toBe(false);
+    } finally {
+      cleanup(root);
+    }
+  });
+
+  test('缓存目录内带前缀的文件也会被重命名', () => {
     const { mod, backupDir, newOrderDir, root } = loadModule();
     try {
       fs.mkdirSync(backupDir, { recursive: true });
