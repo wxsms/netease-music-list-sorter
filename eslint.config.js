@@ -25,4 +25,13 @@ module.exports = [
       },
     },
   },
+  {
+    // 测试文件:Jest 全局(describe/test/expect/jest 等)
+    files: ['tests/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...globals.jest,
+      },
+    },
+  },
 ];

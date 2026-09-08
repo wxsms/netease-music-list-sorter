@@ -28,6 +28,23 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  coverage:
+    # 覆盖率:node:test 内置 coverage + 上传 codecov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:coverage
+      - uses: codecov/codecov-action@v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+
   smoke:
     runs-on: ubuntu-latest
     steps:

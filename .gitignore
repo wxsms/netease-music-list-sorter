@@ -179,6 +179,9 @@ output/
 outputs/
 *.json.cache
 .cache/
+
+# Coverage (c8)
+coverage/
 # 凭据 / 登录信息
 cookies.txt
 *.session
