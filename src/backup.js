@@ -14,7 +14,8 @@ const fs = require('fs');
 const path = require('path');
 const { firstArtist, albumInfo } = require('./sort.js');
 
-const REPO_ROOT = path.join(__dirname, '..');
+// NCM_SORTER_HOME:测试注入用——覆盖仓库根目录,使 .cache/ 与 output/ 落到隔离位置
+const REPO_ROOT = process.env.NCM_SORTER_HOME || path.join(__dirname, '..');
 const CACHE_ROOT = path.join(REPO_ROOT, '.cache');
 const BACKUP_DIR = path.join(CACHE_ROOT, 'backups');
 const NEW_ORDER_DIR = path.join(CACHE_ROOT, 'new-order');
