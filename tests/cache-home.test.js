@@ -30,6 +30,17 @@ function loadModule(env = {}) {
   return mod;
 }
 
+/**
+ * 临时覆盖 process.platform(模块加载时读取它做平台分支),
+ * 返回恢复函数。Object.defineProperty 因为 process.platform
+ * 是 getter,直接赋值在部分 Node 版本会静默失败。
+ */
+function withPlatform(platform) {
+  const orig = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  return () => Object.defineProperty(process, 'platform', orig);
+}
+
 describe('resolveCacheHome', () => {
   test('NCM_SORTER_CACHE_HOME 优先于一切平台默认', () => {
     const mod = loadModule({ NCM_SORTER_CACHE_HOME: '/custom/cache' });
@@ -37,25 +48,58 @@ describe('resolveCacheHome', () => {
   });
 
   test('Windows: %LOCALAPPDATA%\\netease-music-list-sorter\\Cache', () => {
-    const mod = loadModule({ NCM_SORTER_CACHE_HOME: '', LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' });
-    expect(mod.getCacheHome()).toBe(path.join('C:\\Users\\x\\AppData\\Local', 'netease-music-list-sorter', 'Cache'));
+    const restore = withPlatform('win32');
+    try {
+      const mod = loadModule({ NCM_SORTER_CACHE_HOME: '', LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' });
+      expect(mod.getCacheHome()).toBe(path.join('C:\\Users\\x\\AppData\\Local', 'netease-music-list-sorter', 'Cache'));
+    } finally {
+      restore();
+    }
   });
 
   test('Windows: LOCALAPPDATA 缺失时回退 homedir', () => {
-    const mod = loadModule({ NCM_SORTER_CACHE_HOME: '', LOCALAPPDATA: '' });
-    expect(mod.getCacheHome()).toBe(
-      path.join(os.homedir(), 'AppData', 'Local', 'netease-music-list-sorter', 'Cache'),
-    );
+    const restore = withPlatform('win32');
+    try {
+      const mod = loadModule({ NCM_SORTER_CACHE_HOME: '', LOCALAPPDATA: '' });
+      expect(mod.getCacheHome()).toBe(
+        path.join(os.homedir(), 'AppData', 'Local', 'netease-music-list-sorter', 'Cache'),
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  test('macOS: ~/Library/Caches/netease-music-list-sorter', () => {
+    const restore = withPlatform('darwin');
+    try {
+      const mod = loadModule({ NCM_SORTER_CACHE_HOME: '' });
+      expect(mod.getCacheHome()).toBe(
+        path.join(os.homedir(), 'Library', 'Caches', 'netease-music-list-sorter'),
+      );
+    } finally {
+      restore();
+    }
   });
 
   test('Linux: $XDG_CACHE_HOME/netease-music-list-sorter', () => {
-    const mod = loadModule({ NCM_SORTER_CACHE_HOME: '', XDG_CACHE_HOME: '/xdg/cache' });
-    // 平台分支取决于运行环境;非 win32/darwin 时走 XDG
-    if (process.platform !== 'win32' && process.platform !== 'darwin') {
+    const restore = withPlatform('linux');
+    try {
+      const mod = loadModule({ NCM_SORTER_CACHE_HOME: '', XDG_CACHE_HOME: '/xdg/cache' });
       expect(mod.getCacheHome()).toBe(path.join('/xdg/cache', 'netease-music-list-sorter'));
-    } else {
-      // 在 win/darwin 上该用例只验证不抛错
-      expect(typeof mod.getCacheHome()).toBe('string');
+    } finally {
+      restore();
+    }
+  });
+
+  test('Linux: XDG_CACHE_HOME 缺失时回退 ~/.cache', () => {
+    const restore = withPlatform('linux');
+    try {
+      const mod = loadModule({ NCM_SORTER_CACHE_HOME: '', XDG_CACHE_HOME: '' });
+      expect(mod.getCacheHome()).toBe(
+        path.join(os.homedir(), '.cache', 'netease-music-list-sorter'),
+      );
+    } finally {
+      restore();
     }
   });
 });
