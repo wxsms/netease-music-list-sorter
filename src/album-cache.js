@@ -42,7 +42,7 @@ function fetchAlbumTracks(albumId) {
   albumCache.set(albumId, rows);
 
   fs.mkdirSync(path.dirname(diskPath), { recursive: true });
-  fs.writeFileSync(diskPath, JSON.stringify(rows, null, 2), 'utf8');
+  fs.writeFileSync(diskPath, JSON.stringify(rows), 'utf8');
   return rows;
 }
 
@@ -102,7 +102,7 @@ async function prefetchAlbums(albumIds, onProgress, concurrency = 8) {
         albumCache.set(id, rows);
         const diskPath = cachePathForAlbum(id);
         fs.mkdirSync(path.dirname(diskPath), { recursive: true });
-        fs.writeFileSync(diskPath, JSON.stringify(rows, null, 2), 'utf8');
+        fs.writeFileSync(diskPath, JSON.stringify(rows), 'utf8');
         fetched++;
       } catch {
         failed++;

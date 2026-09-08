@@ -31,14 +31,14 @@ function writeBackup(playlistId, tracks) {
   const pad = n => String(n).padStart(2, '0');
   const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   const path_ = path.join(backupDir, `${playlistId}-${ts}.json`);
-  fs.writeFileSync(path_, JSON.stringify(snapshot(tracks), null, 2), 'utf8');
+  fs.writeFileSync(path_, JSON.stringify(snapshot(tracks)), 'utf8');
   return path_;
 }
 
 function writeNewOrder(playlistId, tracks) {
   const newOrderDir = cacheDir('new-order');
   const path_ = path.join(newOrderDir, `${playlistId}.json`);
-  fs.writeFileSync(path_, JSON.stringify(snapshot(tracks), null, 2), 'utf8');
+  fs.writeFileSync(path_, JSON.stringify(snapshot(tracks)), 'utf8');
   return path_;
 }
 
