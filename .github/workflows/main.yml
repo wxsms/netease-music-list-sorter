@@ -10,7 +10,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6.5.0
         with:
           node-version: '22'
@@ -21,7 +21,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6.5.0
         with:
           node-version: '22'
@@ -34,7 +34,7 @@ jobs:
     # (不跑无参数形式——那会进交互向导,需要 TTY)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6.5.0
         with:
           node-version: '22'
@@ -48,7 +48,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6.5.0
         with:
           node-version: '22'
@@ -60,7 +60,7 @@ jobs:
     # 规格与归档变更校验(与本地 openspec validate 一致)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6.5.0
         with:
           node-version: '22'
