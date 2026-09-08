@@ -7,6 +7,7 @@
     "start": "node cli.js",
     "lint": "eslint .",
     "test": "node --test tests/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=tests/** --test-coverage-exclude=cli.js tests/*.test.js",
     "openspec:validate": "openspec validate --all --strict && openspec validate --archived"
   },
   "engines": {

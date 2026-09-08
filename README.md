@@ -1,6 +1,7 @@
 # netease-music-list-sorter
 
 [![CI](https://github.com/wxsms/netease-music-list-sorter/actions/workflows/main.yml/badge.svg)](https://github.com/wxsms/netease-music-list-sorter/actions/workflows/main.yml)
+[![Coverage](https://codecov.io/gh/wxsms/netease-music-list-sorter/branch/master/graph/badge.svg)](https://codecov.io/gh/wxsms/netease-music-list-sorter)
 
 按"专辑优先 + 艺人首次出现"规则重排网易云音乐歌单的 Node.js CLI 工具。
 
