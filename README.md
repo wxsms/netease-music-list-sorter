@@ -63,7 +63,7 @@ npm start        # 或 node cli.js
 
 - 提交前必预览(前 15 首新顺序 + 位置变动统计)并需显式确认,取消不发起任何请求。
 - 交互模式**强制写备份**,提交后 outro 会报告备份文件路径。
-- 内置回滚入口:列出 `.cache/backups/` 下的备份文件(最新在前),选中确认即可恢复。
+- 内置回滚入口:列出 `<缓存目录>/backups/` 下的备份文件(最新在前),选中确认即可恢复。
 
 ### 命令行模式
 
@@ -101,30 +101,41 @@ node cli.js sort --playlistId <加密歌单ID>
 | `--playlistId <enc>` | 加密歌单 ID;不传则默认红心歌单(自动跑 `user favorite` 查询) |
 | `--dry-run` | 只计算新顺序并预览,不提交 |
 | `--no-backup` | 不写备份文件(不推荐,reorder 不可撤销) |
-| `--save-new-order` | 把排序后的新顺序写到 `.cache/new-order/<playlistId>.json`,便于人工检查 |
+| `--save-new-order` | 把排序后的新顺序写到 `<缓存目录>/new-order/<playlistId>.json`,便于人工检查 |
 
 ## 输出与缓存
 
-| 路径 | 内容 | 是否入库 |
-|------|------|---------|
-| `.cache/backups/<playlistId>-<timestamp>.json` | 排序前的原始顺序(每次跑都写,带时间戳) | 否(.gitignore) |
-| `.cache/new-order/<playlistId>.json` | 排序后的新顺序(固定文件名,覆盖写) | 否(.gitignore) |
-| `.cache/albums/<albumId>.json` | album tracks 接口的完整返回,跨次运行复用 | 否(.gitignore) |
+所有落盘数据统一放在**用户级缓存目录**(由 `src/cache-home.js` 解析):
+
+| 平台 | 路径 |
+|------|------|
+| Windows | `%LOCALAPPDATA%\netease-music-list-sorter\Cache` |
+| macOS | `~/Library/Caches/netease-music-list-sorter` |
+| Linux | `$XDG_CACHE_HOME/netease-music-list-sorter`(默认 `~/.cache/netease-music-list-sorter`) |
+
+可用环境变量 `NCM_SORTER_CACHE_HOME` 整体覆盖(测试与高级用户用)。
+
+目录结构:
+
+| 路径 | 内容 |
+|------|------|
+| `<缓存目录>/backups/<playlistId>-<timestamp>.json` | 排序前的原始顺序(每次跑都写,带时间戳) |
+| `<缓存目录>/new-order/<playlistId>.json` | 排序后的新顺序(固定文件名,覆盖写) |
+| `<缓存目录>/albums/<albumId>.json` | album tracks 接口的完整返回,跨次运行复用 |
 
 缓存策略:
-- **三级**:进程内 `Map` → 磁盘 `.cache/albums/*.json` → ncm-cli 接口。
+- **三级**:进程内 `Map` → 磁盘 `<缓存目录>/albums/*.json` → ncm-cli 接口。
 - 缓存的是 album tracks 的**完整返回**(歌名、艺人、时长、专辑内顺序等),其它功能可自由读取。
 - 旧格式缓存(只存 encId 列表)在读取时会被自动忽略并重新拉接口升级。
-- 想强制刷新某张专辑:删除对应的 `.cache/albums/<albumId>.json`。
-- 旧版平铺在 `output/` 与 `.cache/` 根目录的文件会在首次运行时自动迁移到新结构。
+- 想强制刷新某张专辑:删除对应的 `<缓存目录>/albums/<albumId>.json`。
 
 ## 回滚
 
 `cli.js rollback` 把歌单顺序恢复到某个 backup 文件记录的顺序:
 
 ```bash
-node cli.js rollback .cache/backups/<playlistId>-<timestamp>.json
-node cli.js rollback .cache/backups/<playlistId>-<timestamp>.json --dry-run
+node cli.js rollback <缓存目录>/backups/<playlistId>-<timestamp>.json
+node cli.js rollback <缓存目录>/backups/<playlistId>-<timestamp>.json --dry-run
 node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法解析 ID 时手动指定
 ```
 
@@ -155,15 +166,16 @@ node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法
 │   ├── interactive.js # 交互式向导(@clack/prompts)
 │   ├── ncm.js         # ncm-cli 调用(含 Windows 绕过 .cmd shim 的启动方式)
 │   ├── playlist.js    # 红心/创建歌单列表与曲目拉取
+│   ├── cache-home.js  # 用户级缓存目录解析(平台约定 + 环境变量覆盖)
 │   ├── album-cache.js # album tracks 三级缓存
 │   ├── sort.js        # 排序核心(纯函数,专辑内顺序回调注入)
 │   ├── backup.js      # 备份/新顺序落盘/备份枚举
 │   └── reorder.js     # reorder 提交(排序与回滚共用)
-├── tests/             # 单元测试(node:test)
-├── .github/workflows/ # CI(lint / test / 冒烟 / audit / openspec)
+├── tests/             # 单元测试(Jest)
+├── .github/workflows/ # CI(lint / test / coverage / 冒烟 / audit / openspec)
 ├── package.json       # 依赖(@clack/prompts + commander)与 npm start
 ├── eslint.config.js   # ESLint 扁平配置
-├── .gitignore         # 忽略 .cache/ node_modules/ 凭据文件等
+├── .gitignore         # 忽略 node_modules/ 凭据文件等
 ├── CLAUDE.md          # 给 AI 协作者的提示词
 └── README.md
 ```
@@ -176,11 +188,12 @@ node cli.js rollback <backup.json> --playlistId <enc>   # backup 文件名无法
 
 ```bash
 npm run lint              # ESLint 检查
-npm test                  # 单元测试(node:test,零额外依赖)
+npm test                  # 单元测试(Jest)
+npm run test:coverage     # 单元测试 + 覆盖率(lcov,供 codecov)
 npm run openspec:validate # openspec 规格与归档变更校验
 ```
 
-单元测试在 `tests/`,只覆盖纯函数(排序核心、备份文件名解析等),不碰网络与 `.cache/` 目录。
+单元测试在 `tests/`,覆盖排序核心、分页拉取、备份落盘/迁移、专辑缓存与 ncm 调用错误分类;落盘类用例通过 `NCM_SORTER_CACHE_HOME` 指向临时目录,不碰网络与用户真实缓存。
 
 CI(GitHub Actions)在 push `master` 与 PR 时跑同样的检查:lint / test / CLI 冒烟 / `npm audit` / openspec 校验,见 `.github/workflows/`。
 
