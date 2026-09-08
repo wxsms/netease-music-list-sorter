@@ -5,7 +5,6 @@
  *
  * 缓存的是 album tracks 的完整返回(歌名、艺人、时长、专辑内顺序等),其它功能可自由读取。
  * 旧格式缓存(只存 encId 列表)在读取时会被自动忽略并重新拉接口升级。
- * 旧版平铺在仓库 .cache/ 根目录的 album-*.json 会在首次访问时自动迁移到新缓存目录并去掉前缀。
  *
  * 目录解析统一走 cache-home.js(用户目录,可用 NCM_SORTER_CACHE_HOME 覆盖)。
  */
@@ -15,37 +14,9 @@ const path = require('path');
 const { runNcm, runNcmAsync } = require('./ncm.js');
 const { cacheDir } = require('./cache-home.js');
 
-// 仓库内旧版目录(迁移源,只读)
-const REPO_ROOT = path.join(__dirname, '..');
-const LEGACY_CACHE_ROOT = path.join(REPO_ROOT, '.cache');
-
 function cachePathForAlbum(albumId) {
   const safe = albumId.replace(/[^A-Za-z0-9]/g, '_');
   return path.join(cacheDir('albums'), `${safe}.json`);
-}
-
-/**
- * 把旧版平铺在仓库 .cache/ 根目录的 album-*.json 迁移到新缓存目录的 albums/ 并去掉 album- 前缀。
- * 同时兼容迁移到 albums/ 但仍带前缀的文件(上一版结构)。幂等。
- */
-function migrateLegacyAlbumCache() {
-  const albumDir = cacheDir('albums');
-  // 仓库 .cache/ 根目录的 album-*.json
-  if (fs.existsSync(LEGACY_CACHE_ROOT)) {
-    for (const f of fs.readdirSync(LEGACY_CACHE_ROOT)) {
-      if (!/^album-.+\.json$/.test(f)) continue;
-      const dest = path.join(albumDir, f.replace(/^album-/, ''));
-      if (!fs.existsSync(dest)) fs.renameSync(path.join(LEGACY_CACHE_ROOT, f), dest);
-    }
-  }
-  // albums/ 内仍带前缀的文件(上一版结构)
-  if (fs.existsSync(albumDir)) {
-    for (const f of fs.readdirSync(albumDir)) {
-      if (!/^album-.+\.json$/.test(f)) continue;
-      const dest = path.join(albumDir, f.replace(/^album-/, ''));
-      if (!fs.existsSync(dest)) fs.renameSync(path.join(albumDir, f), dest);
-    }
-  }
 }
 
 const albumCache = new Map(); // albumId -> list of track dicts
@@ -53,7 +24,6 @@ const albumCache = new Map(); // albumId -> list of track dicts
 function fetchAlbumTracks(albumId) {
   if (albumCache.has(albumId)) return albumCache.get(albumId);
 
-  migrateLegacyAlbumCache();
   const diskPath = cachePathForAlbum(albumId);
   if (fs.existsSync(diskPath)) {
     try {
@@ -96,8 +66,6 @@ function fetchAlbumTrackOrder(albumId) {
  * @returns {Promise<{fetched: number, failed: number, cached: number}>}
  */
 async function prefetchAlbums(albumIds, onProgress, concurrency = 8) {
-  migrateLegacyAlbumCache();
-
   // 先筛出真正需要拉接口的(内存/磁盘缓存命中)
   const pending = [];
   let cached = 0;

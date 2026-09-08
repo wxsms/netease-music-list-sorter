@@ -223,39 +223,3 @@ describe('prefetchAlbums', () => {
     }
   });
 });
-
-// ---------- 旧版缓存迁移 ----------
-
-describe('migrateLegacyAlbumCache(经 fetchAlbumTracks 触发)', () => {
-  test('仓库 .cache/ 根目录的 album-*.json 迁移到新缓存目录并去前缀', () => {
-    // 迁移源路径基于模块 __dirname,把模块拷到 tmp 下使源目录落到 tmp
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ncm-sorter-album-legacy-'));
-    const srcDir = path.join(root, 'src');
-    fs.mkdirSync(srcDir, { recursive: true });
-    for (const f of ['album-cache.js', 'cache-home.js', 'ncm.js']) {
-      fs.copyFileSync(path.join(__dirname, '..', 'src', f), path.join(srcDir, f));
-    }
-    const cacheHome = path.join(root, 'cache-home');
-    process.env.NCM_SORTER_CACHE_HOME = cacheHome;
-    let mod;
-    jest.isolateModules(() => {
-      mod = require(path.join(srcDir, 'album-cache.js'));
-    });
-    delete process.env.NCM_SORTER_CACHE_HOME;
-    try {
-      const legacyCacheRoot = path.join(root, '.cache');
-      fs.mkdirSync(legacyCacheRoot, { recursive: true });
-      fs.writeFileSync(path.join(legacyCacheRoot, 'album-OLD1.json'), JSON.stringify([row('o1')]));
-      runNcm.mockReturnValue({ code: 200, data: [row('fresh')] });
-
-      // 触发迁移:访问任意专辑
-      mod.fetchAlbumTracks('TRIGGER');
-
-      const albumDir = path.join(cacheHome, 'albums');
-      expect(fs.existsSync(path.join(albumDir, 'OLD1.json'))).toBe(true);
-      expect(fs.existsSync(path.join(legacyCacheRoot, 'album-OLD1.json'))).toBe(false);
-    } finally {
-      cleanup(root);
-    }
-  });
-});
