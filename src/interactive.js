@@ -426,9 +426,9 @@ async function sortFlow(favorite) {
     let newTracks;
     try {
       const { fetched, failed, cached } = await prefetchAlbums(albumIds, (done, total) => {
-        prog.update(done, total, '拉取专辑信息(并发)');
+        prog.update(done, total, '拉取专辑信息');
       });
-      prog.finish(`✅ 专辑数据就绪:缓存 ${cached} 张,新拉 ${fetched} 张${failed ? `,失败 ${failed} 张(退化为原顺序)` : ''}`);
+      prog.finish(`✅ 专辑数据就绪(共 ${fetched + cached} 张${failed ? `,失败 ${failed} 张(退化为原顺序)` : ''})`);
     } catch (e) {
       prog.finish();
       p.log.error(e.message);
@@ -511,7 +511,7 @@ async function sortFlow(favorite) {
       }
 
       const s2 = makeSyncSpinner();
-      s2.start('🚀 正在提交 reorder...');
+      s2.start('🚀 正在提交新顺序...');
       try {
         submitReorder(playlist.id, newTracks.map(t => t.id).filter(Boolean));
         s2.stop('✅ 提交成功');
@@ -562,7 +562,7 @@ async function rollbackFlow() {
   if (!go) bail();
 
   const s = makeSyncSpinner();
-  s.start('🚀 正在提交回滚 reorder...');
+  s.start('🚀 正在回滚歌单顺序...');
   try {
     const { encIds } = readBackup(chosen.path);
     rollbackFromBackup(chosen.playlistId, encIds);

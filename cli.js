@@ -79,7 +79,7 @@ async function runSort(opts) {
   } catch (e) {
     reportNcmError(e);
   }
-  console.log(`      共 ${tracks.length} 首,实际拿到 ${tracks.length} 首`);
+  console.log(`      共拿到 ${tracks.length} 首`);
   if (!tracks.length) {
     console.log('[WARN] 歌单为空,无需排序。');
     return 0;
@@ -93,7 +93,7 @@ async function runSort(opts) {
 
   console.log('[3/N] 计算新顺序(可能需要拉取专辑信息)...');
   const newTracks = computeNewOrder(tracks, fetchAlbumTrackOrder);
-  console.log(`      完成。新顺序共 ${newTracks.length} 首,共调用 album tracks ${loadedAlbumCount()} 次。`);
+  console.log(`      完成。新顺序共 ${newTracks.length} 首(加载了 ${loadedAlbumCount()} 张专辑信息)。`);
 
   printDiffPreview(tracks, newTracks);
 
@@ -107,7 +107,7 @@ async function runSort(opts) {
     return 0;
   }
 
-  console.log('[4/N] 提交 reorder ...');
+  console.log('[4/N] 提交新顺序 ...');
   try {
     submitReorder(playlistId, newTracks.map(t => t.id).filter(Boolean));
   } catch (e) {
@@ -142,7 +142,7 @@ async function runRollback(backupFile, opts) {
     return 0;
   }
 
-  console.log('\n提交 reorder ...');
+  console.log('\n提交回滚 ...');
   try {
     rollbackFromBackup(playlistId, encIds);
   } catch (e) {
