@@ -368,6 +368,14 @@ const SORT_STRATEGIES = [
     needsAlbums: true,
     compute: (tracks, getAlbumTrackOrder) => computeNewOrder(tracks, getAlbumTrackOrder),
   },
+  {
+    id: 'median-position',
+    label: '🎯 歌手/专辑按最集中位置',
+    hint: '块落在曲目最密集的区域,而非首次出现位置',
+    describe: '歌手/专辑按最集中位置',
+    needsAlbums: true,
+    compute: (tracks, getAlbumTrackOrder) => computeNewOrder(tracks, getAlbumTrackOrder, null, { positionMode: 'median' }),
+  },
 ];
 
 /**
@@ -490,8 +498,9 @@ async function sortFlow(favorite) {
         const confirmOptions = [
           { value: 'submit', label: '🚀 确认提交' },
         ];
-        // 歌手块调整的前提是曲目已按歌手块排列,仅对专辑优先策略开放
-        if (strategy.id === 'album-first') {
+        // 歌手块调整的前提是曲目已按歌手块排列,仅对输出歌手块序列的策略开放
+        // (专辑优先与最集中位置;按加入时间的单曲级排序不满足前提)
+        if (strategy.id === 'album-first' || strategy.id === 'median-position') {
           confirmOptions.push({ value: 'adjust', label: '🎚️ 调整歌手顺序' });
         }
         confirmOptions.push(

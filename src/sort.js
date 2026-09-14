@@ -104,6 +104,16 @@ function reorderByArtistBlocks(tracks, artistOrder) {
 }
 
 /**
+ * 中位数:排序后取中间元素,偶数个取中间两数平均。
+ * 用于"最集中位置"策略:对个别离群歌不敏感。
+ */
+function median(nums) {
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/**
  * 计算新顺序。
  *
  * @param {Array} tracks 歌单曲目(原顺序)
@@ -111,10 +121,13 @@ function reorderByArtistBlocks(tracks, artistOrder) {
  * @param {object} [hooks] 可选钩子:
  *   - onAlbumStart(albumCount): 专辑遍历开始时调用一次,告知专辑总数(不含 __no_album__)
  *   - onAlbumDone(albumId): 每张专辑处理完调用一次(含缓存命中)
+ * @param {object} [opts] 可选选项:
+ *   - positionMode: 'first'(默认,按首次出现位置) | 'median'(按曲目位置中位数,即"最集中位置")
  * @returns {Array} 重排后的曲目数组
  */
-function computeNewOrder(tracks, getAlbumTrackOrder, hooks) {
+function computeNewOrder(tracks, getAlbumTrackOrder, hooks, opts) {
   hooks = hooks || {};
+  const medianMode = !!(opts && opts.positionMode === 'median');
   // 1) 按专辑分组
   const albumGroups = new Map(); // albumKey -> [trackIndex...]
   for (let i = 0; i < tracks.length; i++) {
@@ -126,19 +139,31 @@ function computeNewOrder(tracks, getAlbumTrackOrder, hooks) {
 
   if (hooks.onAlbumStart) hooks.onAlbumStart([...albumGroups.keys()].filter(k => k !== '__no_album__').length);
 
-  // 2) 每张专辑的归属艺人 + 在原歌单中首次位置
-  const albumMeta = new Map(); // alKey -> { ownerKey, firstPos }
+  // 2) 每张专辑的归属艺人 + 归属位置
+  //    first 模式:最早出现那首歌的位置;median 模式:该专辑全部曲目位置的中位数
+  const albumMeta = new Map(); // alKey -> { ownerKey, pos }
   for (const [alKey, idxs] of albumGroups) {
     const firstIdx = idxs[0];
     const owner = firstArtist(tracks[firstIdx]);
-    albumMeta.set(alKey, { ownerKey: artistKey(owner), firstPos: firstIdx });
+    const pos = medianMode ? median(idxs) : firstIdx;
+    albumMeta.set(alKey, { ownerKey: artistKey(owner), pos });
   }
 
-  // 3) 每个 owner 在原歌单里首次出现位置(用于艺人之间排序)
-  const ownerFirstPos = new Map();
+  // 3) 每个 owner 的排序键
+  //    first 模式:首次出现位置;median 模式:该 owner 全部曲目位置的中位数
+  const ownerPos = new Map();
+  const ownerAllIdx = new Map(); // ownerKey -> [idx...](median 模式用)
   for (let i = 0; i < tracks.length; i++) {
     const k = artistKey(firstArtist(tracks[i]));
-    if (!ownerFirstPos.has(k)) ownerFirstPos.set(k, i);
+    if (medianMode) {
+      if (!ownerAllIdx.has(k)) ownerAllIdx.set(k, []);
+      ownerAllIdx.get(k).push(i);
+    } else if (!ownerPos.has(k)) {
+      ownerPos.set(k, i);
+    }
+  }
+  if (medianMode) {
+    for (const [k, idxs] of ownerAllIdx) ownerPos.set(k, median(idxs));
   }
 
   // 4) 把专辑归到 owner 名下
@@ -150,14 +175,14 @@ function computeNewOrder(tracks, getAlbumTrackOrder, hooks) {
 
   // owner 之间排序(__unknown__ 落到末尾)
   const ownerOrder = [...ownerAlbums.keys()].sort((a, b) => {
-    const pa = ownerFirstPos.has(a) ? ownerFirstPos.get(a) : tracks.length + 1;
-    const pb = ownerFirstPos.has(b) ? ownerFirstPos.get(b) : tracks.length + 1;
+    const pa = ownerPos.has(a) ? ownerPos.get(a) : tracks.length + 1;
+    const pb = ownerPos.has(b) ? ownerPos.get(b) : tracks.length + 1;
     return pa - pb;
   });
 
   const newTracks = [];
   for (const ownerKey of ownerOrder) {
-    const albumKeys = ownerAlbums.get(ownerKey).sort((a, b) => albumMeta.get(a).firstPos - albumMeta.get(b).firstPos);
+    const albumKeys = ownerAlbums.get(ownerKey).sort((a, b) => albumMeta.get(a).pos - albumMeta.get(b).pos);
 
     for (const alKey of albumKeys) {
       const idxList = albumGroups.get(alKey);

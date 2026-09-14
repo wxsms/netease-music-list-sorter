@@ -115,6 +115,84 @@ describe('computeNewOrder', () => {
   });
 });
 
+// ---------- computeNewOrder positionMode: 'median' ----------
+
+describe('computeNewOrder median 模式', () => {
+  test('歌手块按中位数排,离群首歌不拉偏', () => {
+    // A 只有一首歌在开头(位置 0),其余 4 首集中在末尾 → A 的中位数靠后
+    // B 的歌全在中间 → B 的中位数更小,B 排在 A 前(first 模式则 A 在前)
+    const tracks = [
+      track('a0', 'A', 'a', 'X0'),           // 0:A 的离群歌
+      track('b1', 'B', 'b', 'Z'),            // 1
+      track('b2', 'B', 'b', 'Z'),            // 2
+      track('b3', 'B', 'b', 'Z'),            // 3
+      track('a1', 'A', 'a', 'X1'),           // 4
+      track('a2', 'A', 'a', 'X1'),           // 5
+      track('a3', 'A', 'a', 'X2'),           // 6
+      track('a4', 'A', 'a', 'X2'),           // 7
+    ];
+    const out = computeNewOrder(tracks, () => [], null, { positionMode: 'median' });
+    // B 中位数 2 < A 中位数 5 → B 块在前
+    expect(ids(out)).toEqual(['b1', 'b2', 'b3', 'a0', 'a1', 'a2', 'a3', 'a4']);
+  });
+
+  test('同歌手多专辑按各自中位数排', () => {
+    // A 的专辑 X1 只有一首在开头,其余歌在专辑 X2 且靠后 → X2 排在 X1 前
+    const tracks = [
+      track('x1a', 'A', 'a', 'X1'),          // 0:X1 的离群歌
+      track('x2a', 'A', 'a', 'X2'),          // 1
+      track('x2b', 'A', 'a', 'X2'),          // 2
+      track('x2c', 'A', 'a', 'X2'),          // 3
+      track('x1b', 'A', 'a', 'X1'),          // 4
+      track('x1c', 'A', 'a', 'X1'),          // 5
+    ];
+    const out = computeNewOrder(tracks, () => [], null, { positionMode: 'median' });
+    // X1 中位数 4 > X2 中位数 2 → X2 在前
+    expect(ids(out)).toEqual(['x2a', 'x2b', 'x2c', 'x1a', 'x1b', 'x1c']);
+  });
+
+  test('专辑聚合与专辑内顺序不变', () => {
+    const tracks = [
+      track('x2', 'A', 'a', 'X'),
+      track('x1', 'A', 'a', 'X'),
+      track('y1', 'B', 'b', 'Y'),
+    ];
+    const out = computeNewOrder(tracks, albumId => (albumId === 'X' ? ['x1', 'x2'] : ['y1']), null, { positionMode: 'median' });
+    // A 中位数 0.5 < B 中位数 2 → A 在前;X 内按接口顺序 x1→x2
+    expect(ids(out)).toEqual(['x1', 'x2', 'y1']);
+  });
+
+  test('无专辑的歌按中位数插入主排序', () => {
+    // 无专辑歌 n1/n2 在中间,歌手 A 的歌在两端 → A 中位数 3.5,n 归 __unknown__ 中位数 2.5
+    const tracks = [
+      track('a1', 'A', 'a', 'X'),            // 0
+      track('n1', 'B', 'b', null),           // 1
+      track('n2', 'C', 'c', null),           // 2
+      track('a2', 'A', 'a', 'X'),            // 3
+      track('a3', 'A', 'a', 'X'),            // 4
+      track('a4', 'A', 'a', 'X'),            // 5
+      track('a5', 'A', 'a', 'X'),            // 6
+    ];
+    const out = computeNewOrder(tracks, () => [], null, { positionMode: 'median' });
+    // __unknown__ 中位数 1.5 < A 中位数 3 → 无专辑块在前
+    expect(ids(out)).toEqual(['n1', 'n2', 'a1', 'a2', 'a3', 'a4', 'a5']);
+  });
+
+  test('默认参数行为与 first 模式一致', () => {
+    const tracks = [
+      track('a0', 'A', 'a', 'X0'),
+      track('b1', 'B', 'b', 'Z'),
+      track('b2', 'B', 'b', 'Z'),
+      track('a1', 'A', 'a', 'X1'),
+    ];
+    const firstDefault = computeNewOrder(tracks, () => []);
+    const firstExplicit = computeNewOrder(tracks, () => [], null, { positionMode: 'first' });
+    expect(ids(firstDefault)).toEqual(ids(firstExplicit));
+    // first 模式 A 首次出现更早,A 在前(与 median 模式相反)
+    expect(ids(firstDefault)).toEqual(['a0', 'a1', 'b1', 'b2']);
+  });
+});
+
 // ---------- collectAlbumIds ----------
 
 describe('collectAlbumIds', () => {
