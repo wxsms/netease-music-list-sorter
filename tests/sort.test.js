@@ -9,6 +9,7 @@
 
 const {
   computeNewOrder,
+  sortByAddTime,
   collectAlbumIds,
   extractArtistBlocks,
   reorderByArtistBlocks,
@@ -196,6 +197,75 @@ describe('reorderByArtistBlocks', () => {
     ];
     const out = reorderByArtistBlocks(tracks, ['b', 'b', 'a']);
     expect(ids(out)).toEqual(['b1', 'a1']);
+  });
+});
+
+// ---------- sortByAddTime ----------
+
+describe('sortByAddTime', () => {
+  /** 造一首带加入时间戳的歌。 */
+  function timedTrack(id, addTime) {
+    return { ...track(id, 'A', 'a', 'X'), extMap: { addTime } };
+  }
+
+  test('按 addTime 升序排列', () => {
+    const tracks = [
+      timedTrack('t3', 300),
+      timedTrack('t1', 100),
+      timedTrack('t2', 200),
+    ];
+    expect(ids(sortByAddTime(tracks))).toEqual(['t1', 't2', 't3']);
+  });
+
+  test('返回顺序与时间顺序不一致时按时间排', () => {
+    // 接口返回顺序不保证按 addTime 排(实测非单调)
+    const tracks = [
+      timedTrack('late', 900),
+      timedTrack('early', 100),
+      timedTrack('mid', 500),
+    ];
+    expect(ids(sortByAddTime(tracks))).toEqual(['early', 'mid', 'late']);
+  });
+
+  test('缺 addTime 的曲目按原相对顺序追加末尾,不丢歌', () => {
+    const tracks = [
+      timedTrack('t2', 200),
+      track('no1', 'B', 'b', null), // 无 extMap
+      timedTrack('t1', 100),
+      { ...track('no2', 'C', 'c', null), extMap: {} }, // extMap 无 addTime
+    ];
+    expect(ids(sortByAddTime(tracks))).toEqual(['t1', 't2', 'no1', 'no2']);
+  });
+
+  test('同时间戳保持原顺序(稳定排序)', () => {
+    const tracks = [
+      timedTrack('a', 100),
+      timedTrack('b', 100),
+      timedTrack('c', 100),
+    ];
+    expect(ids(sortByAddTime(tracks))).toEqual(['a', 'b', 'c']);
+  });
+
+  test('空歌单返回空数组', () => {
+    expect(sortByAddTime([])).toEqual([]);
+  });
+
+  test('descending: true 按时间降序,最新在前', () => {
+    const tracks = [
+      timedTrack('mid', 500),
+      timedTrack('late', 900),
+      timedTrack('early', 100),
+    ];
+    expect(ids(sortByAddTime(tracks, { descending: true }))).toEqual(['late', 'mid', 'early']);
+  });
+
+  test('descending 缺时间戳的曲目仍追加末尾', () => {
+    const tracks = [
+      track('no1', 'B', 'b', null),
+      timedTrack('t2', 200),
+      timedTrack('t1', 100),
+    ];
+    expect(ids(sortByAddTime(tracks, { descending: true }))).toEqual(['t2', 't1', 'no1']);
   });
 });
 

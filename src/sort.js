@@ -190,4 +190,27 @@ function computeNewOrder(tracks, getAlbumTrackOrder, hooks) {
   return newTracks;
 }
 
-module.exports = { computeNewOrder, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo, artistKey };
+/**
+ * 按"加入歌单时间"排序:曲目按 extMap.addTime(毫秒时间戳)排列。
+ *
+ * 纯单曲级排序,不聚合专辑、不依赖专辑数据。
+ * 容错:extMap 或 addTime 缺失的曲目按原相对顺序追加在末尾(不丢歌);
+ * 同时间戳时保持原顺序(Array.prototype.sort 在 V8 中稳定)。
+ *
+ * @param {Array} tracks 歌单曲目
+ * @param {object} [opts] { descending: false } 设为 true 时按时间降序(最新加入在前)
+ */
+function sortByAddTime(tracks, opts) {
+  const descending = !!(opts && opts.descending);
+  const withTime = [];
+  const withoutTime = [];
+  for (const t of tracks) {
+    const ts = t.extMap && t.extMap.addTime;
+    if (typeof ts === 'number') withTime.push({ t, ts });
+    else withoutTime.push(t);
+  }
+  withTime.sort((a, b) => (descending ? b.ts - a.ts : a.ts - b.ts));
+  return [...withTime.map(x => x.t), ...withoutTime];
+}
+
+module.exports = { computeNewOrder, sortByAddTime, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo, artistKey };
