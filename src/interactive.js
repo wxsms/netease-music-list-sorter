@@ -416,9 +416,6 @@ async function sortFlow(favorite) {
   for (;;) {
     const playlist = await selectPlaylist(favorite);
 
-    // 选排序策略
-    const strategy = await selectSortStrategy();
-
     // 拉曲目 + 计算
     // 拉取全程反馈:开始(0/total)就有 spinner 帧,分页推进进度条,结束出结果
     const trackProg = makeSyncProgress();
@@ -444,105 +441,110 @@ async function sortFlow(favorite) {
       continue;
     }
 
-    // 计算新顺序:需要专辑数据的策略先预取(缓存命中跳过),再纯内存计算;
-    // 不需要的(如按加入时间)直接计算,零专辑请求
-    const albumIds = strategy.needsAlbums ? collectAlbumIds(tracks) : [];
-    const prog = makeSyncProgress();
-    let newTracks;
-    if (strategy.needsAlbums) {
-      try {
-        const { fetched, failed, cached } = await prefetchAlbums(albumIds, (done, total) => {
-          prog.update(done, total, '拉取专辑信息');
-        });
-        prog.finish(`✅ 专辑数据就绪(共 ${fetched + cached} 张${failed ? `,失败 ${failed} 张(退化为原顺序)` : ''})`);
-      } catch (e) {
-        prog.finish();
-        p.log.error(e.message);
-        continue;
-      }
-    }
-
-    try {
-      newTracks = strategy.compute(tracks, fetchAlbumTrackOrder);
-      if (albumIds.length > 0) p.log.success(`✅ 计算完成(${strategy.describe}),共 ${albumIds.length} 张专辑`);
-      else p.log.success(`✅ 计算完成(${strategy.describe},无专辑信息,按原顺序)`);
-    } catch (e) {
-      p.log.error(e.message);
-      continue;
-    }
-
-    // 预览 + 汇总 + 确认循环
+    // 策略循环:换个策略时复用已拉取的曲目,只重算
     for (;;) {
-      p.note(
-        [
-          `歌单: ${playlist.name} (ID ${playlist.id})`,
-          `排序策略: ${strategy.describe}`,
-          `歌曲数: ${newTracks.length}`,
-          `备份: 提交前自动写入 .cache/backups/`,
-          '',
-          '新顺序预览(前 10 首 + 后 10 首):',
-          ...previewLines(tracks, newTracks),
-        ].join('\n'),
-        '✅ 确认排序信息',
-      );
+      const strategy = await selectSortStrategy();
 
-      const confirmOptions = [
-        { value: 'submit', label: '🚀 确认提交' },
-      ];
-      // 歌手块调整的前提是曲目已按歌手块排列,仅对专辑优先策略开放
-      if (strategy.id === 'album-first') {
-        confirmOptions.push({ value: 'adjust', label: '🎚️ 调整歌手顺序' });
-      }
-      confirmOptions.push(
-        { value: 'change', label: '📂 换一个歌单' },
-        { value: 'cancel', label: '❌ 取消' },
-      );
-
-      const action = guard(await p.select({
-        message: '请确认',
-        options: confirmOptions,
-      }));
-
-      if (action === 'cancel') bail();
-      if (action === 'change') break; // 回到选歌单
-
-      if (action === 'adjust') {
-        const blocks = extractArtistBlocks(newTracks);
-        const adjustedOrder = await reorderArtistsPrompt(blocks);
-        if (adjustedOrder) {
-          newTracks = reorderByArtistBlocks(newTracks, adjustedOrder);
-          p.log.success(`✅ 已按新歌手顺序重排(共 ${adjustedOrder.length} 位歌手)`);
-        } else {
-          p.log.info('已放弃调整,保持原顺序');
+      // 计算新顺序:需要专辑数据的策略先预取(缓存命中跳过),再纯内存计算;
+      // 不需要的(如按加入时间)直接计算,零专辑请求
+      const albumIds = strategy.needsAlbums ? collectAlbumIds(tracks) : [];
+      const prog = makeSyncProgress();
+      let newTracks;
+      if (strategy.needsAlbums) {
+        try {
+          const { fetched, failed, cached } = await prefetchAlbums(albumIds, (done, total) => {
+            prog.update(done, total, '拉取专辑信息');
+          });
+          prog.finish(`✅ 专辑数据就绪(共 ${fetched + cached} 张${failed ? `,失败 ${failed} 张(退化为原顺序)` : ''})`);
+        } catch (e) {
+          prog.finish();
+          p.log.error(e.message);
+          continue; // 换个策略
         }
-        continue; // 回确认环节,预览自动刷新
       }
 
-      // submit:二次确认(reorder 不可撤销) → 强制备份 → 提交
-      const confirmed = guard(await p.confirm({
-        message: `⚠️  即将提交 ${newTracks.length} 首的新顺序到「${playlist.name}」,云端不可撤销。确认提交?`,
-        initialValue: false,
-      }));
-      if (!confirmed) {
-        p.log.info('已取消提交,回到确认环节');
-        continue;
-      }
-
-      const backupPath = writeBackup(playlist.id, tracks);
-
-      const s2 = makeSyncSpinner();
-      s2.start('🚀 正在提交新顺序...');
       try {
-        submitReorder(playlist.id, newTracks.map(t => t.id).filter(Boolean));
-        s2.stop('✅ 提交成功');
+        newTracks = strategy.compute(tracks, fetchAlbumTrackOrder);
+        if (albumIds.length > 0) p.log.success(`✅ 计算完成(${strategy.describe}),共 ${albumIds.length} 张专辑`);
+        else p.log.success(`✅ 计算完成(${strategy.describe},无专辑信息,按原顺序)`);
       } catch (e) {
-        s2.stop();
-        p.log.error(ncmErrMsg(e).split('\n')[0]);
-        p.log.info(`原顺序备份在: ${backupPath}`);
-        process.exit(1);
+        p.log.error(e.message);
+        continue; // 换个策略
       }
-      p.outro(`✅ 已提交新顺序(共 ${newTracks.length} 首),备份: ${backupPath}`);
-      return;
+
+      // 预览 + 汇总 + 确认循环
+      for (;;) {
+        p.note(
+          [
+            `歌单: ${playlist.name} (ID ${playlist.id})`,
+            `排序策略: ${strategy.describe}`,
+            `歌曲数: ${newTracks.length}`,
+            `备份: 提交前自动写入 .cache/backups/`,
+            '',
+            '新顺序预览(前 10 首 + 后 10 首):',
+            ...previewLines(tracks, newTracks),
+          ].join('\n'),
+          '✅ 确认排序信息',
+        );
+
+        const confirmOptions = [
+          { value: 'submit', label: '🚀 确认提交' },
+        ];
+        // 歌手块调整的前提是曲目已按歌手块排列,仅对专辑优先策略开放
+        if (strategy.id === 'album-first') {
+          confirmOptions.push({ value: 'adjust', label: '🎚️ 调整歌手顺序' });
+        }
+        confirmOptions.push(
+          { value: 'change', label: '🔄 换个策略' },
+          { value: 'cancel', label: '❌ 取消' },
+        );
+
+        const action = guard(await p.select({
+          message: '请确认',
+          options: confirmOptions,
+        }));
+
+        if (action === 'cancel') bail();
+        if (action === 'change') break; // 回选策略,曲目复用只重算
+
+        if (action === 'adjust') {
+          const blocks = extractArtistBlocks(newTracks);
+          const adjustedOrder = await reorderArtistsPrompt(blocks);
+          if (adjustedOrder) {
+            newTracks = reorderByArtistBlocks(newTracks, adjustedOrder);
+            p.log.success(`✅ 已按新歌手顺序重排(共 ${adjustedOrder.length} 位歌手)`);
+          } else {
+            p.log.info('已放弃调整,保持原顺序');
+          }
+          continue; // 回确认环节,预览自动刷新
+        }
+
+        // submit:二次确认(reorder 不可撤销) → 强制备份 → 提交
+        const confirmed = guard(await p.confirm({
+          message: `⚠️  即将提交 ${newTracks.length} 首的新顺序到「${playlist.name}」,云端不可撤销。确认提交?`,
+          initialValue: false,
+        }));
+        if (!confirmed) {
+          p.log.info('已取消提交,回到确认环节');
+          continue;
+        }
+
+        const backupPath = writeBackup(playlist.id, tracks);
+
+        const s2 = makeSyncSpinner();
+        s2.start('🚀 正在提交新顺序...');
+        try {
+          submitReorder(playlist.id, newTracks.map(t => t.id).filter(Boolean));
+          s2.stop('✅ 提交成功');
+        } catch (e) {
+          s2.stop();
+          p.log.error(ncmErrMsg(e).split('\n')[0]);
+          p.log.info(`原顺序备份在: ${backupPath}`);
+          process.exit(1);
+        }
+        p.outro(`✅ 已提交新顺序(共 ${newTracks.length} 首),备份: ${backupPath}`);
+        return;
+      }
     }
   }
 }
