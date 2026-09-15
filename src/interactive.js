@@ -292,7 +292,9 @@ async function reorderArtistsPrompt(blocks) {
 
     const order = blocks.map(b => b.artistKey);
     const byKey = new Map(blocks.map(b => [b.artistKey, b]));
-    const HEIGHT = 12; // 列表可见行数(不含头部提示)
+    // 列表可见行数(不含头部提示):按终端高度自适应,至少 12 行,最多 40 行,
+    // 预留 4 行给头部提示与后续输出
+    const HEIGHT = Math.max(12, Math.min(40, (stdout.rows || 24) - 4));
     let cursor = 0;
     let grabbed = false;
     let lastLines = 0;
