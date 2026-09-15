@@ -5,6 +5,7 @@
  *
  * ncm-cli 接口返回结构(2026-09 实测,ncm-cli 0.1.6):
  * - `user favorite`        → { code, data: { id, name, trackCount, ... } }
+ * - `user info`            → { code, data: { nickname, ... } }
  * - `playlist get`         → { code, data: { trackCount, ... } }
  * - `playlist tracks`      → { code, data: [track, ...] } (支持 --limit/--offset,每页最多 500)
  * - `playlist collected`   → { code, data: { recordCount, records: [{ id, name, trackCount, ... }] } }
@@ -24,6 +25,15 @@ function fetchFavoritePlaylist() {
     throw new Error(`user favorite 未返回 id,响应: ${JSON.stringify(resp)}`);
   }
   return { id: data.id, name: data.name, trackCount: data.trackCount };
+}
+
+/**
+ * 查询当前登录用户信息,返回 { nickname }。
+ */
+function fetchUserInfo() {
+  const resp = runNcm(['user', 'info']);
+  const data = resp.data || {};
+  return { nickname: data.nickname };
 }
 
 /**
@@ -98,4 +108,4 @@ function fetchPlaylistList(kind) {
   return out;
 }
 
-module.exports = { fetchFavoritePlaylist, fetchFavoritePlaylistId, fetchPlaylistTracks, fetchPlaylistList };
+module.exports = { fetchFavoritePlaylist, fetchFavoritePlaylistId, fetchUserInfo, fetchPlaylistTracks, fetchPlaylistList };

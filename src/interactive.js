@@ -22,7 +22,7 @@ const pkg = require_('../package.json');
 
 const { NcmError, loginInteractive } = require('./ncm.js');
 const {
-  fetchFavoritePlaylist, fetchPlaylistTracks, fetchPlaylistList,
+  fetchFavoritePlaylist, fetchUserInfo, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
 const { fetchAlbumTrackOrder, prefetchAlbums } = require('./album-cache.js');
 const { computeNewOrder, sortByAddTime, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo } = require('./sort.js');
@@ -617,7 +617,13 @@ async function interactive() {
   p.intro(`🎵 网易云歌单排序 v${pkg.version}`);
 
   const favorite = await precheck();
-  p.log.success('✅ 已登录');
+  let nickname = '';
+  try {
+    nickname = fetchUserInfo().nickname || '';
+  } catch {
+    // 拿不到用户名不影响主流程
+  }
+  p.log.success(nickname ? `✅ 已登录(${nickname})` : '✅ 已登录');
 
   for (;;) {
     const action = guard(await p.select({
