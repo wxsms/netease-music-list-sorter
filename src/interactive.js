@@ -341,6 +341,12 @@ async function reorderArtistsPrompt(blocks) {
       settled = true;
       stdin.removeListener('keypress', onKey);
       try { stdin.setRawMode(false); } catch { /* 已恢复则忽略 */ }
+      // 交还 stdin 给 clack:先 pause 再 resume。
+      // 直接 resume() 在 Windows 上有已知问题:clack prompt 的 close() 会
+      // unpipe stdin,unpipe 后 flowing 状态可能卡在 false,后续 resume()
+      // 不恢复数据流,导致再次进入本界面时按键无响应(界面"卡住")。
+      // pause() + resume() 强制重置流状态,保证下一次交互正常。
+      stdin.pause();
       stdin.resume();
       eraseFrame();
       if (exitWizard) bail(); // process.exit(0),无云端请求
@@ -375,6 +381,9 @@ async function reorderArtistsPrompt(blocks) {
 
     readline.emitKeypressEvents(stdin);
     stdin.setRawMode(true);
+    // 进入时同样用 pause+resume 重置流状态(防御 clack unpipe 后的残留),
+    // 并确保 keypress 监听挂上后 data 流在流动
+    stdin.pause();
     stdin.resume();
     stdin.on('keypress', onKey);
     render();
