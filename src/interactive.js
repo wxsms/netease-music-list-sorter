@@ -272,8 +272,13 @@ async function selectPlaylist(favorite) {
  * - ↑/↓(或 PgUp/PgDn 翻 10 位):未抓取时移动光标;抓取时移动该歌手(可连续)
  * - Space:抓取/放下光标所在歌手
  * - Enter:确认整个调整结果(返回 artistKey 顺序)
- * - Esc:放弃调整(返回 null,调用方保持原顺序)
+ * - q:放弃调整(返回 null,调用方保持原顺序)
  * - Ctrl+C:退出向导(与其它步骤的取消语义一致)
+ *
+ * 放弃键用 q 而不是 Esc:Windows ConPTY 下,readline 的 keypress 解析器
+ * 对孤立 ESC 有 escapeCodeTimeout(500ms)等待期,与 ConPTY 的按键投递时序
+ * 冲突后解析器状态卡死,后续所有 keypress 不再触发(实测:Esc 退出后再次
+ * 进入本界面完全无响应;Enter/q 退出则正常)。q 是单字节无歧义键,无此问题。
  *
  * clack 没有可重排的列表组件,这里用 readline keypress + ANSI 转义自绘。
  */
@@ -318,7 +323,7 @@ async function reorderArtistsPrompt(blocks) {
         const cur = byKey.get(order[cursor]);
         lines.push(MAGENTA(`🎚️ 已抓取「${cur.displayName}」: ↑/↓ 移动 · Space 放下 · Enter 完成`));
       } else {
-        lines.push(CYAN('🎚️ ↑/↓ 选择 · Space 抓取移动 · PgUp/PgDn 翻页 · Enter 完成 · Esc 放弃'));
+        lines.push(CYAN('🎚️ ↑/↓ 选择 · Space 抓取移动 · PgUp/PgDn 翻页 · Enter 完成 · q 放弃'));
       }
       lines.push('');
       const half = Math.floor((HEIGHT - 1) / 2);
@@ -376,7 +381,7 @@ async function reorderArtistsPrompt(blocks) {
       else if (name === 'pagedown') step(1, 10);
       else if (name === 'space' || str === ' ') { grabbed = !grabbed; render(); }
       else if (name === 'return' || str === '\r' || str === '\n') { finish(order.slice(), false); }
-      else if (name === 'escape') { finish(null, false); }
+      else if (str === 'q') { finish(null, false); }
     }
 
     readline.emitKeypressEvents(stdin);
