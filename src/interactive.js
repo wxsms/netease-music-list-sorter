@@ -381,7 +381,7 @@ async function reorderArtistsPrompt(blocks) {
       else if (name === 'pagedown') step(1, 10);
       else if (name === 'space' || str === ' ') { grabbed = !grabbed; render(); }
       else if (name === 'return' || str === '\r' || str === '\n') { finish(order.slice(), false); }
-      else if (str === 'Q') { finish(null, false); }
+      else if (str === 'Q' || str === 'q') { finish(null, false); }
     }
 
     readline.emitKeypressEvents(stdin);
