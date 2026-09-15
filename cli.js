@@ -82,7 +82,8 @@ async function runSort(opts) {
   console.log(`      共拿到 ${tracks.length} 首`);
   if (!tracks.length) {
     console.log('[WARN] 歌单为空,无需排序。');
-    return 0;
+    process.exitCode = 0;
+    return;
   }
 
   // commander 的 --no-backup 约定:设置 opts.backup = false(默认 true)
@@ -104,7 +105,8 @@ async function runSort(opts) {
 
   if (opts.dryRun) {
     console.log('\n[--dry-run] 不提交。如需提交,去掉 --dry-run 再跑一次。');
-    return 0;
+    process.exitCode = 0;
+    return;
   }
 
   console.log('[4/N] 提交新顺序 ...');
@@ -112,10 +114,11 @@ async function runSort(opts) {
     submitReorder(playlistId, newTracks.map(t => t.id).filter(Boolean));
   } catch (e) {
     console.error(`[ERROR] ${e.message}`);
-    return 1;
+    process.exitCode = 1;
+    return;
   }
   console.log(`[OK] 已提交新顺序,共 ${newTracks.length} 首。`);
-  return 0;
+  process.exitCode = 0;
 }
 
 async function runRollback(backupFile, opts) {
@@ -124,7 +127,8 @@ async function runRollback(backupFile, opts) {
     data = readBackup(backupFile);
   } catch (e) {
     console.error(`[ERROR] ${e.message}`);
-    return 1;
+    process.exitCode = 1;
+    return;
   }
   const encIds = data.encIds;
   console.log(`backup 文件: ${data.path}`);
@@ -133,13 +137,15 @@ async function runRollback(backupFile, opts) {
   const playlistId = opts.playlistId || extractPlaylistIdFromFilename(path.basename(data.path));
   if (!playlistId) {
     console.error('[ERROR] 无法从文件名解析 playlistId,请用 --playlistId 传入');
-    return 1;
+    process.exitCode = 1;
+    return;
   }
   console.log(`目标歌单 ID: ${playlistId}`);
 
   if (opts.dryRun) {
     console.log('\n[--dry-run] 不提交。');
-    return 0;
+    process.exitCode = 0;
+    return;
   }
 
   console.log('\n提交回滚 ...');
@@ -147,10 +153,11 @@ async function runRollback(backupFile, opts) {
     rollbackFromBackup(playlistId, encIds);
   } catch (e) {
     console.error(`[ERROR] ${e.message}`);
-    return 1;
+    process.exitCode = 1;
+    return;
   }
   console.log(`[OK] 回滚完成,共 ${encIds.length} 首。`);
-  return 0;
+  process.exitCode = 0;
 }
 
 // ---------- 入口判定 ----------
@@ -179,5 +186,8 @@ if (process.argv.length <= 2) {
     .option('--dry-run', '只打印将提交的顺序,不提交')
     .action(runRollback);
 
-  program.parseAsync(process.argv).then(() => { /* 退出码由 action 返回值/异常决定 */ });
+  program.parseAsync(process.argv).catch((e) => {
+    console.error(`[ERROR] ${e.message}`);
+    process.exit(1);
+  });
 }

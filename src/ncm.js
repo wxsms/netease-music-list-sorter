@@ -19,12 +19,20 @@ const path = require('path');
  * 解析 ncm-cli 启动方式,返回 [executable, ...args_prefix] 数组。
  *
  * 查找顺序:
+ * 0. 环境变量 NCM_SORTER_NCM_ENTRY(指向某个 JS 入口文件,用当前 node 启动)
+ *    —— e2e 测试用它注入 fake ncm-cli,不碰真实依赖与网络
  * 1. 项目本地依赖 require.resolve('@music163/ncm-cli/dist/index.js')
  *    (package.json 已声明该依赖,正常 npm install 后必然存在)
  * 2. 全局安装的 ncm-cli(兼容旧用法,Windows 上定位 .cmd shim 背后的 dist/index.js)
  * 3. 兕底 'ncm-cli'(交给 PATH,非 Windows 全局安装场景)
  */
 function resolveNcmEntry() {
+  // 0. 环境变量显式指定入口(e2e 测试用)
+  const envEntry = process.env.NCM_SORTER_NCM_ENTRY;
+  if (envEntry) {
+    return [process.execPath, envEntry];
+  }
+
   // 1. 项目本地依赖
   try {
     const localIndex = require.resolve('@music163/ncm-cli/dist/index.js');

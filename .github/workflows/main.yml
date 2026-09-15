@@ -19,6 +19,7 @@ jobs:
       - run: npm run lint
 
   test:
+    # 单元测试 + e2e(fake ncm-cli,离线跑完整 CLI 链路)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
