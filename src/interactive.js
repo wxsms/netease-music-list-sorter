@@ -49,6 +49,26 @@ function ncmErrMsg(e) {
   return e.message;
 }
 
+/** 终端显示宽度:CJK 等宽字符占 2 列,其余占 1 列。 */
+function displayWidth(str) {
+  let w = 0;
+  for (const ch of str) {
+    const code = ch.codePointAt(0);
+    // CJK 统一表意文字、CJK 标点、全角符号等宽字符区间
+    const wide = (code >= 0x1100 && code <= 0x115f)
+      || (code >= 0x2e80 && code <= 0x303e)
+      || (code >= 0x3041 && code <= 0x33ff)
+      || (code >= 0x3400 && code <= 0x4dbf)
+      || (code >= 0x4e00 && code <= 0x9fff)
+      || (code >= 0xf900 && code <= 0xfaff)
+      || (code >= 0xfe30 && code <= 0xfe4f)
+      || (code >= 0xff00 && code <= 0xff60)
+      || (code >= 0xffe0 && code <= 0xffe6);
+    w += wide ? 2 : 1;
+  }
+  return w;
+}
+
 /**
  * 同步进度条:每次 update 直接用 \r 重绘当前行。
  *
@@ -57,7 +77,7 @@ function ncmErrMsg(e) {
  * 进度条一帧都画不出来。直写 stdout 才能在同步流程里实时刷新。
  */
 function makeSyncProgress() {
-  let lastLen = 0;
+  let lastWidth = 0;
   let active = false;
   const WIDTH = 24;
   const isTTY = !!process.stdout.isTTY;
@@ -71,16 +91,16 @@ function makeSyncProgress() {
       const bar = '█'.repeat(filled) + '░'.repeat(WIDTH - filled);
       const pct = String(Math.round(ratio * 100)).padStart(3) + '%';
       const line = `◆  ${bar} ${pct}  ${current}/${total}  ${label}`;
-      process.stdout.write('\r' + ' '.repeat(lastLen) + '\r' + line);
-      lastLen = line.length;
+      process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r' + line);
+      lastWidth = displayWidth(line);
       active = true;
     },
     /** 清掉进度行并输出完成信息。 */
     finish(msg) {
       if (active && isTTY) {
-        process.stdout.write('\r' + ' '.repeat(lastLen) + '\r');
+        process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r');
         active = false;
-        lastLen = 0;
+        lastWidth = 0;
       }
       if (msg) p.log.success(msg);
     },
@@ -97,7 +117,7 @@ function makeSyncProgress() {
 function makeSyncSpinner() {
   const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let frame = 0;
-  let lastLen = 0;
+  let lastWidth = 0;
   let active = false;
   const isTTY = !!process.stdout.isTTY;
 
@@ -106,17 +126,17 @@ function makeSyncSpinner() {
     start(msg) {
       if (!isTTY) return;
       const line = `${FRAMES[frame]}  ${msg}`;
-      process.stdout.write('\r' + ' '.repeat(lastLen) + '\r' + line);
-      lastLen = line.length;
+      process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r' + line);
+      lastWidth = displayWidth(line);
       frame = (frame + 1) % FRAMES.length;
       active = true;
     },
     /** 清掉 spinner 行并输出完成信息(成功/失败由调用方决定文案)。 */
     stop(msg) {
       if (active && isTTY) {
-        process.stdout.write('\r' + ' '.repeat(lastLen) + '\r');
+        process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r');
         active = false;
-        lastLen = 0;
+        lastWidth = 0;
       }
       if (msg) p.log.success(msg);
     },
