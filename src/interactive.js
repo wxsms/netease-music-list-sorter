@@ -153,7 +153,7 @@ async function precheck() {
     }
 
     // 多为未登录或凭据失效:直接进入扫码登录
-    p.log.warn(`未登录或凭据失效(${ncmErrMsg(e).split('\n')[0].slice(0, 120)}),请扫码登录`);
+    p.log.warn('未登录或登录已过期,请扫码登录');
     const ok = loginInteractive();
     if (!ok) {
       p.log.error('登录进程异常结束,请检查网络后重试');
