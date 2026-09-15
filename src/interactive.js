@@ -287,6 +287,9 @@ async function reorderArtistsPrompt(blocks) {
       return;
     }
 
+    // 独立步骤:进入调整界面时清屏,让列表从终端顶部开始
+    clearScreen();
+
     const order = blocks.map(b => b.artistKey);
     const byKey = new Map(blocks.map(b => [b.artistKey, b]));
     const HEIGHT = 12; // 列表可见行数(不含头部提示)
