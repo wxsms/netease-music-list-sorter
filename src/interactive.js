@@ -669,7 +669,6 @@ async function interactive() {
   p.log.success(nickname ? `✅ 已登录(${nickname})` : '✅ 已登录');
 
   for (;;) {
-    clearScreen();
     const action = guard(await p.select({
       message: '想做什么?',
       options: [
