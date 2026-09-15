@@ -4,7 +4,8 @@
  * ncm.js 单元测试(Jest)。
  *
  * mock child_process 的 spawnSync/spawn,测 runNcm 的三种错误分类
- * (spawn/exit/parse)与成功路径。resolveNcmEntry 的平台分支也顺带覆盖。
+ * (spawn/exit/parse)与成功路径。resolveNcmEntry 的优先级与回退分支
+ * (本地依赖 → 全局 shim → 兕底 'ncm-cli')也顺带覆盖。
  */
 
 const childProcess = require('child_process');
@@ -13,8 +14,10 @@ jest.spyOn(childProcess, 'spawnSync');
 jest.spyOn(childProcess, 'spawn');
 
 // ncm.js 在模块加载时调用 resolveNcmEntry(读 PATH/文件系统),
-// 这里 mock 掉 fs 的 existsSync,让它走"找不到 shim"的兜底分支,
-// 保证测试环境无关(不依赖本机是否装了 ncm-cli)。
+// 这里 mock 掉 fs 的 existsSync,让全局 shim 查找走"找不到"分支,
+// 保证测试环境无关(不依赖本机是否全局装了 ncm-cli)。
+// 注意:项目本地依赖(require.resolve)优先于全局查找,装了依赖的
+// 开发环境会命中本地分支,未装时走全局分支,两者都合法。
 jest.mock('fs', () => {
   const actual = jest.requireActual('fs');
   return {
@@ -23,7 +26,7 @@ jest.mock('fs', () => {
   };
 });
 
-const { runNcm, NcmError } = require('../src/ncm.js');
+const { runNcm, NcmError, resolveNcmEntry, loginInteractive, checkLogin } = require('../src/ncm.js');
 
 beforeEach(() => {
   childProcess.spawnSync.mockReset();
@@ -107,5 +110,113 @@ describe('runNcm', () => {
     expect(e.name).toBe('NcmError');
     expect(e.message).toBe('msg');
     expect(e.detail).toBe('detail');
+  });
+});
+
+describe('resolveNcmEntry', () => {
+  test('项目本地依赖存在时优先返回 [node, 本地 dist/index.js]', () => {
+    const entry = resolveNcmEntry();
+    // 开发/CI 环境 npm install 后本地依赖必然存在
+    const hasLocal = (() => {
+      try {
+        require.resolve('@music163/ncm-cli/dist/index.js');
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    if (hasLocal) {
+      expect(entry[0]).toBe(process.execPath);
+      expect(entry[1]).toMatch(/[\\/]@music163[\\/]ncm-cli[\\/]dist[\\/]index\.js$/);
+    } else {
+      // 未装本地依赖时兑底到 'ncm-cli'(existsSync 已 mock 为 false)
+      expect(entry).toEqual(['ncm-cli']);
+    }
+  });
+});
+
+describe('loginInteractive', () => {
+  test('登录进程正常结束(退出码 0)返回 true', () => {
+    childProcess.spawnSync.mockReturnValue({ status: 0, error: null });
+    expect(loginInteractive()).toBe(true);
+    const [cmd, args, opts] = childProcess.spawnSync.mock.calls[0];
+    expect(args).toContain('login');
+    expect(opts.stdio).toBe('inherit');
+    expect(cmd).toBeTruthy();
+  });
+
+  test('登录进程失败(非零退出码或 spawn 错误)返回 false', () => {
+    childProcess.spawnSync.mockReturnValue({ status: 1, error: null });
+    expect(loginInteractive()).toBe(false);
+    childProcess.spawnSync.mockReturnValue({ status: null, error: new Error('ENOENT') });
+    expect(loginInteractive()).toBe(false);
+  });
+});
+
+describe('checkLogin', () => {
+  test('返回 login --check 的解析结果', () => {
+    childProcess.spawnSync.mockReturnValue({
+      status: 0,
+      stdout: '{"success":true,"message":"已登录实名账号"}',
+      stderr: '',
+    });
+    expect(checkLogin()).toEqual({ success: true, message: '已登录实名账号' });
+    const args = childProcess.spawnSync.mock.calls[0][1];
+    expect(args).toContain('login');
+    expect(args).toContain('--check');
+  });
+});
+
+describe('resolveNcmEntry', () => {
+  test('项目本地依赖存在时优先返回 [node, 本地 dist/index.js]', () => {
+    const entry = resolveNcmEntry();
+    // 开发/CI 环境 npm install 后本地依赖必然存在
+    const hasLocal = (() => {
+      try {
+        require.resolve('@music163/ncm-cli/dist/index.js');
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    if (hasLocal) {
+      expect(entry[0]).toBe(process.execPath);
+      expect(entry[1]).toMatch(/[\\/]@music163[\\/]ncm-cli[\\/]dist[\\/]index\.js$/);
+    } else {
+      // 未装本地依赖时兑底到 'ncm-cli'(existsSync 已 mock 为 false)
+      expect(entry).toEqual(['ncm-cli']);
+    }
+  });
+});
+
+describe('loginInteractive', () => {
+  test('登录进程正常结束(退出码 0)返回 true', () => {
+    childProcess.spawnSync.mockReturnValue({ status: 0, error: null });
+    expect(loginInteractive()).toBe(true);
+    const [cmd, args, opts] = childProcess.spawnSync.mock.calls[0];
+    expect(args).toContain('login');
+    expect(opts.stdio).toBe('inherit');
+    expect(cmd).toBeTruthy();
+  });
+
+  test('登录进程失败(非零退出码或 spawn 错误)返回 false', () => {
+    childProcess.spawnSync.mockReturnValue({ status: 1, error: null });
+    expect(loginInteractive()).toBe(false);
+    childProcess.spawnSync.mockReturnValue({ status: null, error: new Error('ENOENT') });
+    expect(loginInteractive()).toBe(false);
+  });
+});
+
+describe('checkLogin', () => {
+  test('返回 login --check 的解析结果', () => {
+    childProcess.spawnSync.mockReturnValue({
+      status: 0,
+      stdout: '{"success":true,"message":"已登录实名账号"}',
+      stderr: '',
+    });
+    expect(checkLogin()).toEqual({ success: true, message: '已登录实名账号' });
+    const args = childProcess.spawnSync.mock.calls[0][1];
+    expect(args).toContain('login');
+    expect(args).toContain('--check');
   });
 });

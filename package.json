@@ -15,7 +15,11 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
+    "@music163/ncm-cli": "^0.1.7",
     "commander": "^15.0.0"
+  },
+  "overrides": {
+    "ffprobe-static": "file:stubs/ffprobe-static"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

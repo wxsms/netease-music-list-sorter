@@ -20,7 +20,7 @@ const readline = require('readline');
 const require_ = createRequire(__filename);
 const pkg = require_('../package.json');
 
-const { NcmError } = require('./ncm.js');
+const { NcmError, loginInteractive } = require('./ncm.js');
 const {
   fetchFavoritePlaylist, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
@@ -128,34 +128,55 @@ function makeSyncSpinner() {
 /**
  * 一次 user favorite 调用同时验证"可执行"与"已登录"。
  * 返回红心歌单 { id, name, trackCount }(选红心来源时直接复用,省一次请求)。
+ *
+ * 调用失败时:spawn 失败提示安装;其余(多为未登录/凭据失效)提供工具内
+ * 扫码登录(直接 spawn 交互式 ncm-cli login,二维码渲染在当前终端),
+ * 登录后重试;用户拒绝登录则退出。
  */
-function precheck() {
-  try {
-    return fetchFavoritePlaylist();
-  } catch (e) {
+async function precheck() {
+  for (;;) {
+    let e;
+    try {
+      return fetchFavoritePlaylist();
+    } catch (err) {
+      e = err;
+    }
     if (e instanceof NcmError && e.kind === 'spawn') {
       p.note(
         [
-          '未检测到 ncm-cli。请先安装并登录:',
-          '',
-          '  npm install -g @music163/ncm-cli',
-          '  ncm-cli login',
+          '未检测到 ncm-cli。请先在项目目录执行 npm install(本项目已内置 ncm-cli 依赖),',
+          '或通过 npm install -g @music163/ncm-cli 全局安装后重试。',
         ].join('\n'),
         '❌ ncm-cli 不可用',
       );
-    } else {
-      p.note(
-        [
-          'ncm-cli 已安装,但调用失败(可能未登录或凭据失效)。',
-          '',
-          '  请先运行: ncm-cli login',
-          '',
-          ncmErrMsg(e).slice(0, 300),
-        ].join('\n'),
-        '❌ ncm-cli 未登录或调用失败',
-      );
+      process.exit(1);
     }
-    process.exit(1);
+
+    // 多为未登录或凭据失效:提供工具内扫码登录
+    p.note(
+      [
+        'ncm-cli 调用失败,可能未登录或凭据失效。',
+        '',
+        ncmErrMsg(e).slice(0, 300),
+      ].join('\n'),
+      '❌ ncm-cli 未登录或调用失败',
+    );
+
+    const retryLogin = guard(await p.confirm({
+      message: '是否现在扫码登录网易云音乐?',
+      initialValue: true,
+    }), '已取消');
+
+    if (!retryLogin) process.exit(1);
+
+    p.log.info('启动扫码登录,请在终端中显示的二维码过期前完成扫码...');
+    const ok = loginInteractive();
+    if (!ok) {
+      p.log.error('登录进程异常结束,请检查网络后重试,或手动执行 ncm-cli login');
+      process.exit(1);
+    }
+    p.log.success('登录流程已完成,正在验证...');
+    // 循环回到 fetchFavoritePlaylist 验证登录态
   }
 }
 
@@ -611,7 +632,7 @@ async function rollbackFlow() {
 async function interactive() {
   p.intro(`🎵 网易云歌单排序 v${pkg.version}`);
 
-  const favorite = precheck();
+  const favorite = await precheck();
   p.log.success(`✅ ncm-cli 可用,已登录(红心歌单: ${favorite.name}, ${favorite.trackCount} 首)`);
 
   for (;;) {

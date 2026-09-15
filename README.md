@@ -31,21 +31,17 @@
 ## 依赖
 
 - Node.js 18+
-- npm 全局安装的 `ncm-cli`,且已 `ncm-cli login` 登录网易云音乐
+- 无需单独安装 ncm-cli:`@music163/ncm-cli` 已声明为项目依赖,`npm install` 后自动可用
 
 ```bash
-npm install -g @music163/ncm-cli
-ncm-cli login
+npm install
 ```
 
-确认 CLI 可用:
+首次使用时如未登录,交互式向导会提示在工具内直接扫码登录(二维码渲染在当前终端),无需手动执行 `ncm-cli login`。
 
-```bash
-ncm-cli --version
-ncm-cli user favorite --output table
-```
+> 体积说明:ncm-cli 的 `ffprobe-static` 依赖包含约 350MB 的静态二进制(仅播放功能需要),本项目通过 `package.json` 的 `overrides` 将其替换为本地 stub(`stubs/ffprobe-static/`),安装体积从 ~369MB 降到 ~37MB。如需使用 ncm-cli 的播放功能,删除 `overrides` 字段后重新 `npm install`。
 
-克隆后跑一次 `npm install` 安装依赖(`@clack/prompts` + `commander`)即可使用全部功能。
+仍想使用全局安装的 ncm-cli 也可以:本地依赖优先,找不到时自动回退到 PATH 中的全局 `ncm-cli`。
 
 ## 使用
 
@@ -55,7 +51,7 @@ ncm-cli user favorite --output table
 npm start        # 或 node cli.js
 ```
 
-流程:环境预检(自动验证 ncm-cli 已安装已登录)→ 选操作(排序 / 回滚 / 退出)→ 选歌单来源(红心 / 我创建的)→ 选歌单 → 选排序策略 → 预览新顺序与汇总 → 确认提交。
+流程:环境预检(自动验证 ncm-cli 可用且已登录,未登录时可在工具内扫码)→ 选操作(排序 / 回滚 / 退出)→ 选歌单来源(红心 / 我创建的)→ 选歌单 → 选排序策略 → 预览新顺序与汇总 → 确认提交。
 
 排序策略:
 

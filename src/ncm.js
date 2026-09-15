@@ -3,6 +3,9 @@
 /**
  * ncm-cli 调用的唯一实现。
  *
+ * 优先使用项目本地依赖(node_modules/@music163/ncm-cli,通过 require.resolve 解析),
+ * 用户无需全局安装;找不到本地依赖时回退到全局安装的 ncm-cli。
+ *
  * Windows 上 npm 全局装的是 ncm-cli.cmd shim,spawnSync 不带 shell 时 Node 不会
  * 自动找 .cmd 后缀(ENOENT); 带 shell:true 又会经过 cmd.exe,触发 8K 命令行限制。
  * 解决:直接用 node 启动 ncm-cli 的 dist/index.js,跟 .cmd 内部做的一样。
@@ -14,11 +17,25 @@ const path = require('path');
 
 /**
  * 解析 ncm-cli 启动方式,返回 [executable, ...args_prefix] 数组。
+ *
+ * 查找顺序:
+ * 1. 项目本地依赖 require.resolve('@music163/ncm-cli/dist/index.js')
+ *    (package.json 已声明该依赖,正常 npm install 后必然存在)
+ * 2. 全局安装的 ncm-cli(兼容旧用法,Windows 上定位 .cmd shim 背后的 dist/index.js)
+ * 3. 兕底 'ncm-cli'(交给 PATH,非 Windows 全局安装场景)
  */
 function resolveNcmEntry() {
+  // 1. 项目本地依赖
+  try {
+    const localIndex = require.resolve('@music163/ncm-cli/dist/index.js');
+    return [process.execPath, localIndex];
+  } catch {
+    // 本地依赖不存在(未 npm install 或被裁剪),继续回退
+  }
+
   if (process.platform !== 'win32') return ['ncm-cli'];
 
-  // 找 ncm-cli.cmd 或 ncm-cli 所在目录
+  // 2. 找全局安装的 ncm-cli.cmd 或 ncm-cli 所在目录
   const exts = process.env.PATHEXT ? process.env.PATHEXT.split(';') : ['.CMD', '.cmd'];
   const paths = (process.env.PATH || '').split(';').filter(Boolean);
   let shimDir = null;
@@ -73,7 +90,7 @@ function runNcm(args) {
     throw new NcmError(
       'spawn',
       `无法启动 ncm-cli: ${res.error.message}`,
-      '请确认 ncm-cli 已通过 npm install -g @music163/ncm-cli 安装并在 PATH 中。',
+      '请先在项目目录执行 npm install(本项目已内置 ncm-cli 依赖),或通过 npm install -g @music163/ncm-cli 全局安装。',
     );
   }
   if (res.status !== 0) {
@@ -112,7 +129,7 @@ function runNcmAsync(args) {
       reject(new NcmError(
         'spawn',
         `无法启动 ncm-cli: ${err.message}`,
-        '请确认 ncm-cli 已通过 npm install -g @music163/ncm-cli 安装并在 PATH 中。',
+        '请先在项目目录执行 npm install(本项目已内置 ncm-cli 依赖),或通过 npm install -g @music163/ncm-cli 全局安装。',
       ));
     });
     child.on('close', (code) => {
@@ -129,4 +146,28 @@ function runNcmAsync(args) {
   });
 }
 
-module.exports = { runNcm, runNcmAsync, NcmError, resolveNcmEntry };
+/**
+ * 在工具内发起扫码登录:spawn 交互式 `ncm-cli login` 子进程,
+ * 继承 stdio 让二维码直接渲染在当前终端,用户扫码完成后子进程退出。
+ *
+ * 返回 true 表示登录进程正常结束(退出码 0),false 表示无法启动登录进程。
+ * 登录是否成功由调用方重新调 login --check / 业务命令验证。
+ */
+function loginInteractive() {
+  const res = spawnSync(
+    NCM_CMD[0],
+    [...NCM_CMD.slice(1), 'login'],
+    { stdio: 'inherit' },
+  );
+  return !res.error && res.status === 0;
+}
+
+/**
+ * 检查登录状态,返回 ncm-cli `login --check` 的解析结果
+ * ({ success: boolean, message: string })。失败时抛 NcmError。
+ */
+function checkLogin() {
+  return runNcm(['login', '--check']);
+}
+
+module.exports = { runNcm, runNcmAsync, NcmError, resolveNcmEntry, loginInteractive, checkLogin };
