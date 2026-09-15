@@ -136,9 +136,14 @@ function makeSyncSpinner() {
 async function precheck() {
   for (;;) {
     let e;
+    const s = makeSyncSpinner();
+    s.start('正在检查登录状态...');
     try {
-      return fetchFavoritePlaylist();
+      const favorite = fetchFavoritePlaylist();
+      s.stop();
+      return favorite;
     } catch (err) {
+      s.stop();
       e = err;
     }
     if (e instanceof NcmError && e.kind === 'spawn') {
@@ -618,11 +623,14 @@ async function interactive() {
 
   const favorite = await precheck();
   let nickname = '';
+  const s = makeSyncSpinner();
+  s.start('正在获取用户信息...');
   try {
     nickname = fetchUserInfo().nickname || '';
   } catch {
     // 拿不到用户名不影响主流程
   }
+  s.stop();
   p.log.success(nickname ? `✅ 已登录(${nickname})` : '✅ 已登录');
 
   for (;;) {
