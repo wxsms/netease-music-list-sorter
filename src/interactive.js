@@ -20,9 +20,9 @@ const readline = require('readline');
 const require_ = createRequire(__filename);
 const pkg = require_('../package.json');
 
-const { NcmError } = require('./ncm.js');
+const { NcmError, loginInteractive } = require('./ncm.js');
 const {
-  fetchFavoritePlaylist, fetchPlaylistTracks, fetchPlaylistList,
+  fetchFavoritePlaylist, fetchUserInfo, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
 const { fetchAlbumTrackOrder, prefetchAlbums } = require('./album-cache.js');
 const { computeNewOrder, sortByAddTime, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo } = require('./sort.js');
@@ -33,6 +33,16 @@ const { submitReorder, rollbackFromBackup } = require('./reorder.js');
 function bail(msg) {
   p.cancel(msg || '已取消');
   process.exit(0);
+}
+
+/**
+ * 清屏并把光标移到左上角,让当前步骤的界面处在终端最顶部。
+ *
+ * 只清当前可视区(\x1b[2J + \x1b[H),不清回滚区——之前步骤的内容
+ * 被刷到上方,仍可上翻查看;非 TTY(管道/CI)下静默跳过。
+ */
+function clearScreen() {
+  if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[H');
 }
 
 /** prompt 包装:取消即退出。 */
@@ -49,6 +59,26 @@ function ncmErrMsg(e) {
   return e.message;
 }
 
+/** 终端显示宽度:CJK 等宽字符占 2 列,其余占 1 列。 */
+function displayWidth(str) {
+  let w = 0;
+  for (const ch of str) {
+    const code = ch.codePointAt(0);
+    // CJK 统一表意文字、CJK 标点、全角符号等宽字符区间
+    const wide = (code >= 0x1100 && code <= 0x115f)
+      || (code >= 0x2e80 && code <= 0x303e)
+      || (code >= 0x3041 && code <= 0x33ff)
+      || (code >= 0x3400 && code <= 0x4dbf)
+      || (code >= 0x4e00 && code <= 0x9fff)
+      || (code >= 0xf900 && code <= 0xfaff)
+      || (code >= 0xfe30 && code <= 0xfe4f)
+      || (code >= 0xff00 && code <= 0xff60)
+      || (code >= 0xffe0 && code <= 0xffe6);
+    w += wide ? 2 : 1;
+  }
+  return w;
+}
+
 /**
  * 同步进度条:每次 update 直接用 \r 重绘当前行。
  *
@@ -57,7 +87,7 @@ function ncmErrMsg(e) {
  * 进度条一帧都画不出来。直写 stdout 才能在同步流程里实时刷新。
  */
 function makeSyncProgress() {
-  let lastLen = 0;
+  let lastWidth = 0;
   let active = false;
   const WIDTH = 24;
   const isTTY = !!process.stdout.isTTY;
@@ -71,16 +101,16 @@ function makeSyncProgress() {
       const bar = '█'.repeat(filled) + '░'.repeat(WIDTH - filled);
       const pct = String(Math.round(ratio * 100)).padStart(3) + '%';
       const line = `◆  ${bar} ${pct}  ${current}/${total}  ${label}`;
-      process.stdout.write('\r' + ' '.repeat(lastLen) + '\r' + line);
-      lastLen = line.length;
+      process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r' + line);
+      lastWidth = displayWidth(line);
       active = true;
     },
     /** 清掉进度行并输出完成信息。 */
     finish(msg) {
       if (active && isTTY) {
-        process.stdout.write('\r' + ' '.repeat(lastLen) + '\r');
+        process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r');
         active = false;
-        lastLen = 0;
+        lastWidth = 0;
       }
       if (msg) p.log.success(msg);
     },
@@ -97,7 +127,7 @@ function makeSyncProgress() {
 function makeSyncSpinner() {
   const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let frame = 0;
-  let lastLen = 0;
+  let lastWidth = 0;
   let active = false;
   const isTTY = !!process.stdout.isTTY;
 
@@ -106,17 +136,17 @@ function makeSyncSpinner() {
     start(msg) {
       if (!isTTY) return;
       const line = `${FRAMES[frame]}  ${msg}`;
-      process.stdout.write('\r' + ' '.repeat(lastLen) + '\r' + line);
-      lastLen = line.length;
+      process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r' + line);
+      lastWidth = displayWidth(line);
       frame = (frame + 1) % FRAMES.length;
       active = true;
     },
     /** 清掉 spinner 行并输出完成信息(成功/失败由调用方决定文案)。 */
     stop(msg) {
       if (active && isTTY) {
-        process.stdout.write('\r' + ' '.repeat(lastLen) + '\r');
+        process.stdout.write('\r' + ' '.repeat(lastWidth) + '\r');
         active = false;
-        lastLen = 0;
+        lastWidth = 0;
       }
       if (msg) p.log.success(msg);
     },
@@ -128,34 +158,44 @@ function makeSyncSpinner() {
 /**
  * 一次 user favorite 调用同时验证"可执行"与"已登录"。
  * 返回红心歌单 { id, name, trackCount }(选红心来源时直接复用,省一次请求)。
+ *
+ * 调用失败时:spawn 失败提示安装;其余(多为未登录/凭据失效)直接进入
+ * 工具内扫码登录(spawn 交互式 ncm-cli login,二维码渲染在当前终端),
+ * 登录后重试验证;登录进程异常结束则退出。
  */
-function precheck() {
-  try {
-    return fetchFavoritePlaylist();
-  } catch (e) {
+async function precheck() {
+  for (;;) {
+    let e;
+    const s = makeSyncSpinner();
+    s.start('正在检查登录状态...');
+    try {
+      const favorite = fetchFavoritePlaylist();
+      s.stop();
+      return favorite;
+    } catch (err) {
+      s.stop();
+      e = err;
+    }
     if (e instanceof NcmError && e.kind === 'spawn') {
       p.note(
         [
-          '未检测到 ncm-cli。请先安装并登录:',
-          '',
-          '  npm install -g @music163/ncm-cli',
-          '  ncm-cli login',
+          '未检测到 ncm-cli。请先在项目目录执行 npm install(本项目已内置 ncm-cli 依赖),',
+          '或通过 npm install -g @music163/ncm-cli 全局安装后重试。',
         ].join('\n'),
         '❌ ncm-cli 不可用',
       );
-    } else {
-      p.note(
-        [
-          'ncm-cli 已安装,但调用失败(可能未登录或凭据失效)。',
-          '',
-          '  请先运行: ncm-cli login',
-          '',
-          ncmErrMsg(e).slice(0, 300),
-        ].join('\n'),
-        '❌ ncm-cli 未登录或调用失败',
-      );
+      process.exit(1);
     }
-    process.exit(1);
+
+    // 多为未登录或凭据失效:直接进入扫码登录
+    p.log.warn('未登录或登录已过期,请扫码登录');
+    const ok = loginInteractive();
+    if (!ok) {
+      p.log.error('登录进程异常结束,请检查网络后重试');
+      process.exit(1);
+    }
+    p.log.success('登录流程已完成,正在验证...');
+    // 循环回到 fetchFavoritePlaylist 验证登录态
   }
 }
 
@@ -168,6 +208,7 @@ function precheck() {
 async function selectPlaylist(favorite) {
   // 来源选择循环:空列表/失败时回到这里
   for (;;) {
+    clearScreen();
     const source = guard(await p.select({
       message: '📋 选择歌单来源',
       options: [
@@ -231,8 +272,13 @@ async function selectPlaylist(favorite) {
  * - ↑/↓(或 PgUp/PgDn 翻 10 位):未抓取时移动光标;抓取时移动该歌手(可连续)
  * - Space:抓取/放下光标所在歌手
  * - Enter:确认整个调整结果(返回 artistKey 顺序)
- * - Esc:放弃调整(返回 null,调用方保持原顺序)
+ * - Q:取消调整(返回 null,调用方保持原顺序)
  * - Ctrl+C:退出向导(与其它步骤的取消语义一致)
+ *
+ * 取消键用 Q 而不是 Esc:Windows ConPTY 下,readline 的 keypress 解析器
+ * 对孤立 ESC 有 escapeCodeTimeout(500ms)等待期,与 ConPTY 的按键投递时序
+ * 冲突后解析器状态卡死,后续所有 keypress 不再触发(实测:Esc 退出后再次
+ * 进入本界面完全无响应;Enter/Q 退出则正常)。Q 是单字节无歧义键,无此问题。
  *
  * clack 没有可重排的列表组件,这里用 readline keypress + ANSI 转义自绘。
  */
@@ -246,9 +292,14 @@ async function reorderArtistsPrompt(blocks) {
       return;
     }
 
+    // 独立步骤:进入调整界面时清屏,让列表从终端顶部开始
+    clearScreen();
+
     const order = blocks.map(b => b.artistKey);
     const byKey = new Map(blocks.map(b => [b.artistKey, b]));
-    const HEIGHT = 12; // 列表可见行数(不含头部提示)
+    // 列表可见行数(不含头部提示):按终端高度自适应,至少 12 行,最多 40 行,
+    // 预留 4 行给头部提示与后续输出
+    const HEIGHT = Math.max(12, Math.min(40, (stdout.rows || 24) - 4));
     let cursor = 0;
     let grabbed = false;
     let lastLines = 0;
@@ -272,7 +323,7 @@ async function reorderArtistsPrompt(blocks) {
         const cur = byKey.get(order[cursor]);
         lines.push(MAGENTA(`🎚️ 已抓取「${cur.displayName}」: ↑/↓ 移动 · Space 放下 · Enter 完成`));
       } else {
-        lines.push(CYAN('🎚️ ↑/↓ 选择 · Space 抓取移动 · PgUp/PgDn 翻页 · Enter 完成 · Esc 放弃'));
+        lines.push(CYAN('🎚️ ↑/↓ 选择 · Space 抓取移动 · PgUp/PgDn 翻页 · Enter 完成 · Q 取消'));
       }
       lines.push('');
       const half = Math.floor((HEIGHT - 1) / 2);
@@ -295,6 +346,12 @@ async function reorderArtistsPrompt(blocks) {
       settled = true;
       stdin.removeListener('keypress', onKey);
       try { stdin.setRawMode(false); } catch { /* 已恢复则忽略 */ }
+      // 交还 stdin 给 clack:先 pause 再 resume。
+      // 直接 resume() 在 Windows 上有已知问题:clack prompt 的 close() 会
+      // unpipe stdin,unpipe 后 flowing 状态可能卡在 false,后续 resume()
+      // 不恢复数据流,导致再次进入本界面时按键无响应(界面"卡住")。
+      // pause() + resume() 强制重置流状态,保证下一次交互正常。
+      stdin.pause();
       stdin.resume();
       eraseFrame();
       if (exitWizard) bail(); // process.exit(0),无云端请求
@@ -324,11 +381,14 @@ async function reorderArtistsPrompt(blocks) {
       else if (name === 'pagedown') step(1, 10);
       else if (name === 'space' || str === ' ') { grabbed = !grabbed; render(); }
       else if (name === 'return' || str === '\r' || str === '\n') { finish(order.slice(), false); }
-      else if (name === 'escape') { finish(null, false); }
+      else if (str === 'Q' || str === 'q') { finish(null, false); }
     }
 
     readline.emitKeypressEvents(stdin);
     stdin.setRawMode(true);
+    // 进入时同样用 pause+resume 重置流状态(防御 clack unpipe 后的残留),
+    // 并确保 keypress 监听挂上后 data 流在流动
+    stdin.pause();
     stdin.resume();
     stdin.on('keypress', onKey);
     render();
@@ -382,6 +442,7 @@ const SORT_STRATEGIES = [
  * 选择排序策略。返回策略对象;取消走 bail。
  */
 async function selectSortStrategy() {
+  clearScreen();
   return guard(await p.select({
     message: '🧮 选择排序策略',
     options: SORT_STRATEGIES.map(s => ({
@@ -482,6 +543,7 @@ async function sortFlow(favorite) {
 
       // 预览 + 汇总 + 确认循环
       for (;;) {
+        clearScreen();
         p.note(
           [
             `歌单: ${playlist.name} (ID ${playlist.id})`,
@@ -561,6 +623,7 @@ async function sortFlow(favorite) {
 // ---------- 回滚分支 ----------
 
 async function rollbackFlow() {
+  clearScreen();
   const backups = listBackups();
 
   if (!backups.length) {
@@ -609,10 +672,20 @@ async function rollbackFlow() {
 // ---------- 主入口 ----------
 
 async function interactive() {
+  clearScreen();
   p.intro(`🎵 网易云歌单排序 v${pkg.version}`);
 
-  const favorite = precheck();
-  p.log.success(`✅ ncm-cli 可用,已登录(红心歌单: ${favorite.name}, ${favorite.trackCount} 首)`);
+  const favorite = await precheck();
+  let nickname = '';
+  const s = makeSyncSpinner();
+  s.start('正在获取用户信息...');
+  try {
+    nickname = fetchUserInfo().nickname || '';
+  } catch {
+    // 拿不到用户名不影响主流程
+  }
+  s.stop();
+  p.log.success(nickname ? `✅ 已登录(${nickname})` : '✅ 已登录');
 
   for (;;) {
     const action = guard(await p.select({

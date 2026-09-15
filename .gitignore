@@ -12,6 +12,7 @@ node_modules/
 # Distribution / packaging
 .Python
 build/
+!stubs/build/
 develop-eggs/
 dist/
 downloads/

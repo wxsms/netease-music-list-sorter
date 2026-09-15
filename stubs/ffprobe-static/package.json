@@ -1,0 +1,6 @@
+{
+  "name": "ffprobe-static",
+  "version": "0.0.0-stub",
+  "description": "stub replacing ffprobe-static to avoid 350MB binaries",
+  "main": "index.js"
+}
