@@ -617,7 +617,7 @@ async function interactive() {
   p.intro(`🎵 网易云歌单排序 v${pkg.version}`);
 
   const favorite = await precheck();
-  p.log.success(`✅ ncm-cli 可用,已登录(红心歌单: ${favorite.name}, ${favorite.trackCount} 首)`);
+  p.log.success('✅ 已登录');
 
   for (;;) {
     const action = guard(await p.select({
