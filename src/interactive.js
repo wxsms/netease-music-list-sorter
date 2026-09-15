@@ -653,6 +653,7 @@ async function rollbackFlow() {
 // ---------- 主入口 ----------
 
 async function interactive() {
+  clearScreen();
   p.intro(`🎵 网易云歌单排序 v${pkg.version}`);
 
   const favorite = await precheck();
