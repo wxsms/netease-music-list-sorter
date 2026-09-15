@@ -1,0 +1,6 @@
+{
+  "name": "build",
+  "version": "0.0.0-stub",
+  "description": "stub replacing the ancient 'build' package (unused at runtime by ncm-cli) to avoid its vulnerable dep chain",
+  "main": "index.js"
+}
