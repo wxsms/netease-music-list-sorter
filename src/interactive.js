@@ -35,6 +35,16 @@ function bail(msg) {
   process.exit(0);
 }
 
+/**
+ * 清屏并把光标移到左上角,让当前步骤的界面处在终端最顶部。
+ *
+ * 只清当前可视区(\x1b[2J + \x1b[H),不清回滚区——之前步骤的内容
+ * 被刷到上方,仍可上翻查看;非 TTY(管道/CI)下静默跳过。
+ */
+function clearScreen() {
+  if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[H');
+}
+
 /** prompt 包装:取消即退出。 */
 function guard(value, msg) {
   if (p.isCancel(value)) bail(msg);
@@ -198,6 +208,7 @@ async function precheck() {
 async function selectPlaylist(favorite) {
   // 来源选择循环:空列表/失败时回到这里
   for (;;) {
+    clearScreen();
     const source = guard(await p.select({
       message: '📋 选择歌单来源',
       options: [
@@ -412,6 +423,7 @@ const SORT_STRATEGIES = [
  * 选择排序策略。返回策略对象;取消走 bail。
  */
 async function selectSortStrategy() {
+  clearScreen();
   return guard(await p.select({
     message: '🧮 选择排序策略',
     options: SORT_STRATEGIES.map(s => ({
@@ -512,6 +524,7 @@ async function sortFlow(favorite) {
 
       // 预览 + 汇总 + 确认循环
       for (;;) {
+        clearScreen();
         p.note(
           [
             `歌单: ${playlist.name} (ID ${playlist.id})`,
@@ -591,6 +604,7 @@ async function sortFlow(favorite) {
 // ---------- 回滚分支 ----------
 
 async function rollbackFlow() {
+  clearScreen();
   const backups = listBackups();
 
   if (!backups.length) {
@@ -654,6 +668,7 @@ async function interactive() {
   p.log.success(nickname ? `✅ 已登录(${nickname})` : '✅ 已登录');
 
   for (;;) {
+    clearScreen();
     const action = guard(await p.select({
       message: '想做什么?',
       options: [
