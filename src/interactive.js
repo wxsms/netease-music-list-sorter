@@ -129,9 +129,9 @@ function makeSyncSpinner() {
  * 一次 user favorite 调用同时验证"可执行"与"已登录"。
  * 返回红心歌单 { id, name, trackCount }(选红心来源时直接复用,省一次请求)。
  *
- * 调用失败时:spawn 失败提示安装;其余(多为未登录/凭据失效)提供工具内
- * 扫码登录(直接 spawn 交互式 ncm-cli login,二维码渲染在当前终端),
- * 登录后重试;用户拒绝登录则退出。
+ * 调用失败时:spawn 失败提示安装;其余(多为未登录/凭据失效)直接进入
+ * 工具内扫码登录(spawn 交互式 ncm-cli login,二维码渲染在当前终端),
+ * 登录后重试验证;登录进程异常结束则退出。
  */
 async function precheck() {
   for (;;) {
@@ -152,27 +152,11 @@ async function precheck() {
       process.exit(1);
     }
 
-    // 多为未登录或凭据失效:提供工具内扫码登录
-    p.note(
-      [
-        'ncm-cli 调用失败,可能未登录或凭据失效。',
-        '',
-        ncmErrMsg(e).slice(0, 300),
-      ].join('\n'),
-      '❌ ncm-cli 未登录或调用失败',
-    );
-
-    const retryLogin = guard(await p.confirm({
-      message: '是否现在扫码登录网易云音乐?',
-      initialValue: true,
-    }), '已取消');
-
-    if (!retryLogin) process.exit(1);
-
-    p.log.info('启动扫码登录,请在终端中显示的二维码过期前完成扫码...');
+    // 多为未登录或凭据失效:直接进入扫码登录
+    p.log.warn(`未登录或凭据失效(${ncmErrMsg(e).split('\n')[0].slice(0, 120)}),请扫码登录`);
     const ok = loginInteractive();
     if (!ok) {
-      p.log.error('登录进程异常结束,请检查网络后重试,或手动执行 ncm-cli login');
+      p.log.error('登录进程异常结束,请检查网络后重试');
       process.exit(1);
     }
     p.log.success('登录流程已完成,正在验证...');
