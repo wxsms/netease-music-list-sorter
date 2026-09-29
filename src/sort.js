@@ -12,10 +12,17 @@
  * 3. 艺人之间:按归属艺人在原歌单里的首次出现位置升序。
  * 4. 同一艺人多张专辑:按各自第一首歌在原歌单中的位置升序。
  * 5. 无专辑信息的歌:归到 __unknown__ 虚拟艺人名下,按首次出现位置插入主排序。
+ * 6. 艺人 key 容错:artists 为空数组时回退 fullArtists;无任何 id 的艺人
+ *    (如 live 专辑的 fullArtists 条目)按名字归 key(name: 前缀)。调用方可用
+ *    unifyArtistKeys 预处理把名字 key 归并到同名正规艺人,让同一歌手排在一起。
  */
 
 function firstArtist(track) {
-  const artists = track.artists || track.fullArtists || [];
+  // artists 为空数组时回退 fullArtists(实测部分 live 专辑接口只填 fullArtists;
+  // 空数组是真值,不能用 || 回退)
+  const artists = (track.artists && track.artists.length)
+    ? track.artists
+    : (track.fullArtists || []);
   return artists[0] || null;
 }
 
@@ -25,7 +32,10 @@ function albumInfo(track) {
 
 function artistKey(artist) {
   if (!artist) return '__unknown__';
-  return String(artist.originalId || artist.id || `enc:${artist.id}`);
+  if (artist.originalId || artist.id) return String(artist.originalId || artist.id);
+  // 无任何 id(如 live 专辑 fullArtists 条目 originalId:0/id:null):按名字归 key;
+  // 空名字仍归 __unknown__,避免所有空名字歌错误合并成一块
+  return artist.name ? `name:${artist.name}` : '__unknown__';
 }
 
 /**
@@ -101,6 +111,57 @@ function reorderByArtistBlocks(tracks, artistOrder) {
     out.push(...b.tracks);
   }
   return out;
+}
+
+/**
+ * 艺人 key 归一预处理:把"只有名字、无 id"的艺人(live 专辑常见,
+ * fullArtists 条目 originalId:0/id:null)归并到同名正规艺人名下,
+ * 让同一歌手的曲目在排序后真正排在一起。
+ *
+ * 规则(唯一性守卫,宁可不并也不错并):
+ * - 只处理 key 退化为 name: 前缀的曲目;
+ * - 名字恰好对应歌单内**唯一**一个正规 originalId 时,才把该曲目的
+ *   artists[0].originalId 补上(浅拷贝 track + 浅拷贝 artist,不改输入);
+ * - 名字对应 0 个或多个 originalId(同名不同人)时不猜,保持独立块。
+ *
+ * 必须在进入任何排序/块操作之前调用,且对同一份 tracks 只调用一次;
+ * 归一后的曲目传给 computeNewOrder / extractArtistBlocks / 预览,
+ * 所有消费者的 key 自然一致。
+ *
+ * @param {Array} tracks 歌单曲目(原顺序)
+ * @returns {Array} 归一后的曲目数组(未受影响的曲目保持原引用)
+ */
+function unifyArtistKeys(tracks) {
+  // 1) 收集正规艺人名 → artistKey 集合(只统计 key 非 name:/__unknown__ 的)
+  const nameToKeys = new Map(); // name -> Set(artistKey)
+  for (const t of tracks) {
+    const list = (t.artists && t.artists.length) ? t.artists : (t.fullArtists || []);
+    for (const a of list) {
+      if (!a || !a.name) continue;
+      const key = artistKey(a);
+      if (key === '__unknown__' || key.startsWith('name:')) continue;
+      if (!nameToKeys.has(a.name)) nameToKeys.set(a.name, new Set());
+      nameToKeys.get(a.name).add(key);
+    }
+  }
+
+  // 2) 对 key 退化为 name: 的曲目,名字唯一对应时补 key(写入 originalId,
+  //    artistKey 优先读 originalId,后续所有消费者算出的 key 即为该正规 key)
+  return tracks.map(t => {
+    const artist = firstArtist(t);
+    if (!artist || artist.originalId || artist.id) return t; // 正规 key,不动
+    const name = artist.name;
+    if (!name) return t; // 空名字归 __unknown__,不猜
+    const keys = nameToKeys.get(name);
+    if (!keys || keys.size !== 1) return t; // 0 个或多个候选:不猜
+    const key = [...keys][0];
+    // 浅拷贝 track 与 artist,不污染调用方的输入对象
+    return {
+      ...t,
+      artists: [{ ...artist, originalId: key }],
+      fullArtists: (t.fullArtists || []).map(fa => (fa === artist ? { ...fa, originalId: key } : fa)),
+    };
+  });
 }
 
 /**
@@ -238,4 +299,4 @@ function sortByAddTime(tracks, opts) {
   return [...withTime.map(x => x.t), ...withoutTime];
 }
 
-module.exports = { computeNewOrder, sortByAddTime, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo, artistKey };
+module.exports = { computeNewOrder, sortByAddTime, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, unifyArtistKeys, firstArtist, albumInfo, artistKey };
