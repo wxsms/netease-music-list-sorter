@@ -22,7 +22,7 @@ const {
   fetchFavoritePlaylist, fetchPlaylistTracks,
 } = require('./src/playlist.js');
 const { fetchAlbumTrackOrder, loadedAlbumCount } = require('./src/album-cache.js');
-const { computeNewOrder, firstArtist, albumInfo } = require('./src/sort.js');
+const { computeNewOrder, unifyArtistKeys, firstArtist, albumInfo } = require('./src/sort.js');
 const { writeBackup, writeNewOrder, readBackup, extractPlaylistIdFromFilename } = require('./src/backup.js');
 const { submitReorder, rollbackFromBackup } = require('./src/reorder.js');
 const { NcmError } = require('./src/ncm.js');
@@ -85,6 +85,9 @@ async function runSort(opts) {
     process.exitCode = 0;
     return;
   }
+
+  // 艺人 key 归一:live 专辑常只有 fullArtists(无 id),按名字归并到同名正规艺人
+  tracks = unifyArtistKeys(tracks);
 
   // commander 的 --no-backup 约定:设置 opts.backup = false(默认 true)
   if (opts.backup !== false) {

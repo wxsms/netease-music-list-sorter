@@ -25,7 +25,7 @@ const {
   fetchFavoritePlaylist, fetchUserInfo, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
 const { fetchAlbumTrackOrder, prefetchAlbums } = require('./album-cache.js');
-const { computeNewOrder, sortByAddTime, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, firstArtist, albumInfo } = require('./sort.js');
+const { computeNewOrder, sortByAddTime, collectAlbumIds, extractArtistBlocks, reorderByArtistBlocks, unifyArtistKeys, firstArtist, albumInfo } = require('./sort.js');
 const { writeBackup, listBackups, readBackup } = require('./backup.js');
 const { submitReorder, rollbackFromBackup } = require('./reorder.js');
 
@@ -509,6 +509,10 @@ async function sortFlow(favorite) {
       p.log.warn('歌单为空,无需排序');
       continue;
     }
+
+    // 艺人 key 归一:live 专辑常只有 fullArtists(无 id),按名字归并到
+    // 同名正规艺人,保证同一歌手的曲目排在一起(唯一性守卫,不猜同名歧义)
+    tracks = unifyArtistKeys(tracks);
 
     // 策略循环:换个策略时复用已拉取的曲目,只重算
     for (;;) {

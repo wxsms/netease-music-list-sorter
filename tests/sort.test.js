@@ -13,6 +13,7 @@ const {
   collectAlbumIds,
   extractArtistBlocks,
   reorderByArtistBlocks,
+  unifyArtistKeys,
   artistKey,
   firstArtist,
   albumInfo,
@@ -350,20 +351,110 @@ describe('sortByAddTime', () => {
 // ---------- artistKey / firstArtist / albumInfo ----------
 
 describe('artistKey', () => {
-  test('originalId 优先,id 兜底,null 归 __unknown__', () => {
+  test('originalId 优先,id 兜底,无 id 按名字,空名字/null 归 __unknown__', () => {
     expect(artistKey({ originalId: 'o1', id: 'i1' })).toBe('o1');
     expect(artistKey({ id: 'i1' })).toBe('i1');
     expect(artistKey({ id: 123 })).toBe('123');
+    expect(artistKey({ originalId: 0, id: null, name: '陈楚生' })).toBe('name:陈楚生');
+    expect(artistKey({ name: '' })).toBe('__unknown__');
     expect(artistKey(null)).toBe('__unknown__');
   });
 });
 
 describe('firstArtist', () => {
-  test('artists[0],artists 缺失时用 fullArtists 兜底', () => {
+  test('artists[0],artists 缺失或为空数组时用 fullArtists 兜底', () => {
     expect(firstArtist({ artists: [{ name: 'A' }] }).name).toBe('A');
     expect(firstArtist({ artists: null, fullArtists: [{ name: 'F' }] }).name).toBe('F');
+    // 实测部分 live 专辑 artists 为空数组、艺人只在 fullArtists 里
+    expect(firstArtist({ artists: [], fullArtists: [{ name: 'L' }] }).name).toBe('L');
+    expect(firstArtist({ artists: [], fullArtists: [] })).toBe(null);
     expect(firstArtist({ artists: [] })).toBe(null);
     expect(firstArtist({})).toBe(null);
+  });
+});
+
+// ---------- unifyArtistKeys(艺人 key 归一) ----------
+
+describe('unifyArtistKeys', () => {
+  /** 造一首 live 曲目:artists 为空数组,艺人只在 fullArtists 且无 id。 */
+  function liveTrack(id, artistName, albumId) {
+    return {
+      id,
+      name: `live-${id}`,
+      artists: [],
+      fullArtists: [{ originalId: 0, id: null, name: artistName }],
+      album: albumId ? { id: albumId, name: `album-${albumId}` } : null,
+    };
+  }
+
+  test('名字唯一对应正规艺人时归并,同一歌手排在一起', () => {
+    const tracks = [
+      track('a1', '陈楚生', 2124, 'X'),
+      track('b1', 'B', 'b', 'Z'),
+      liveTrack('l1', '陈楚生', 'L'),
+    ];
+    const unified = unifyArtistKeys(tracks);
+    // l1 的艺人 key 从 name:陈楚生 归并为 2124,与 a1 同块
+    expect(artistKey(firstArtist(unified[2]))).toBe('2124');
+    const out = computeNewOrder(unified, () => []);
+    expect(ids(out)).toEqual(['a1', 'l1', 'b1']);
+  });
+
+  test('名字对应多个 originalId(同名不同人)时不猜,保持独立块', () => {
+    const tracks = [
+      track('a1', 'A', 1, 'X'),
+      track('a2', 'A', 2, 'Y'), // 同名 A 但不同 originalId
+      liveTrack('l1', 'A', 'L'),
+    ];
+    const unified = unifyArtistKeys(tracks);
+    expect(artistKey(firstArtist(unified[2]))).toBe('name:A');
+  });
+
+  test('名字无任何正规艺人对应时不猜', () => {
+    const tracks = [
+      track('a1', 'A', 1, 'X'),
+      liveTrack('l1', 'B', 'L'), // B 无正规条目
+    ];
+    const unified = unifyArtistKeys(tracks);
+    expect(artistKey(firstArtist(unified[1]))).toBe('name:B');
+  });
+
+  test('空名字不猜,归 __unknown__', () => {
+    const tracks = [
+      track('a1', 'A', 1, 'X'),
+      liveTrack('l1', '', 'L'),
+    ];
+    const unified = unifyArtistKeys(tracks);
+    expect(artistKey(firstArtist(unified[1]))).toBe('__unknown__');
+  });
+
+  test('不修改输入对象(浅拷贝),正规曲目保持原引用', () => {
+    const tracks = [
+      track('a1', 'A', 1, 'X'),
+      liveTrack('l1', 'A', 'L'),
+    ];
+    const unified = unifyArtistKeys(tracks);
+    expect(unified[0]).toBe(tracks[0]); // 正规曲目不动
+    expect(unified[1]).not.toBe(tracks[1]); // live 曲目被拷贝
+    expect(tracks[1].fullArtists[0].originalId).toBe(0); // 原对象未被污染
+  });
+
+  test('归并后 extractArtistBlocks 不出现重复歌手块', () => {
+    const tracks = [
+      track('a1', '陈楚生', 2124, 'X'),
+      track('b1', 'B', 'b', 'Z'),
+      liveTrack('l1', '陈楚生', 'L'),
+    ];
+    const unified = unifyArtistKeys(tracks);
+    const out = computeNewOrder(unified, () => []);
+    const blocks = extractArtistBlocks(out);
+    expect(blocks.map(b => b.artistKey)).toEqual(['2124', 'b']);
+    expect(blocks[0].displayName).toBe('陈楚生');
+    expect(ids(blocks[0].tracks)).toEqual(['a1', 'l1']);
+  });
+
+  test('空歌单返回空数组', () => {
+    expect(unifyArtistKeys([])).toEqual([]);
   });
 });
 
