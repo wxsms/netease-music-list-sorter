@@ -20,7 +20,7 @@ const readline = require('readline');
 const require_ = createRequire(__filename);
 const pkg = require_('../package.json');
 
-const { NcmError, loginInteractive } = require('./ncm.js');
+const { NcmError, loginInteractive, isApiKeyMissing, setConfig } = require('./ncm.js');
 const {
   fetchFavoritePlaylist, fetchUserInfo, fetchPlaylistTracks, fetchPlaylistList,
 } = require('./playlist.js');
@@ -156,6 +156,50 @@ function makeSyncSpinner() {
 // ---------- 环境预检 ----------
 
 /**
+ * API 凭证配置引导:告知获取渠道,收集 appId/privateKey 并写入 ncm-cli 配置。
+ *
+ * 由 precheck 在检测到「API key 未设置」时调用;写入后回到 precheck 循环
+ * 重新验证——凭证填错会再次进入本函数,形成循环重试,用户可 Ctrl+C 退出。
+ */
+async function configureCredentials(err) {
+  if (err) {
+    p.log.warn('API 凭证无效或未配置,请(重新)填写');
+  }
+  p.note(
+    [
+      '本工具依赖网易云音乐开放平台 API,需要先配置凭证:',
+      '',
+      '  1. 前往开放平台入驻(个人类型即可):',
+      '     https://developer.music.163.com/st/developer/apply/account?type=INDIVIDUAL',
+      '  2. 入驻后在控制台获取 App ID 和 Private Key',
+      '',
+      '凭证只需配置一次,会保存到本机(~/.config/ncm-cli/)。',
+    ].join('\n'),
+    '🔑 首次使用需要配置 API 凭证',
+  );
+
+  const appId = guard(await p.text({
+    message: '请输入 App ID',
+    validate: v => (v && v.trim() ? undefined : 'App ID 不能为空'),
+  }));
+  const privateKey = guard(await p.text({
+    message: '请输入 Private Key',
+    validate: v => (v && v.trim() ? undefined : 'Private Key 不能为空'),
+  }));
+
+  const s = makeSyncSpinner();
+  s.start('正在保存凭证...');
+  const okApp = setConfig('appId', appId.trim());
+  const okKey = setConfig('privateKey', privateKey.trim());
+  if (!okApp || !okKey) {
+    s.stop();
+    p.log.error('凭证写入失败,请检查 ncm-cli 是否可用');
+    process.exit(1);
+  }
+  s.stop('✅ 凭证已保存');
+}
+
+/**
  * 一次 user favorite 调用同时验证"可执行"与"已登录"。
  * 返回红心歌单 { id, name, trackCount }(选红心来源时直接复用,省一次请求)。
  *
@@ -185,6 +229,12 @@ async function precheck() {
         '❌ ncm-cli 不可用',
       );
       process.exit(1);
+    }
+
+    // API key 未配置:在工具内引导填写凭证(循环直到有效或用户取消)
+    if (isApiKeyMissing(e)) {
+      await configureCredentials(e);
+      continue; // 回循环顶重新验证
     }
 
     // 多为未登录或凭据失效:直接进入扫码登录
