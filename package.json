@@ -1,6 +1,6 @@
 {
   "name": "ncm-sorter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "按\"专辑优先 + 艺人首次出现\"等规则重排网易云音乐歌单的 CLI 工具(ncm-cli 驱动)",
   "bin": {
     "ncm-sorter": "cli.js"
