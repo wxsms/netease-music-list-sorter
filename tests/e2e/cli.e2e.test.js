@@ -223,4 +223,19 @@ describe('e2e: 错误路径', () => {
     });
     expect(res2.status).not.toBe(0);
   });
+
+  test('未配置 API key:非零退出且错误信息透传给用户', () => {
+    const cacheHome = path.join(tmpDir, 'cache');
+    const res = spawnSync(process.execPath, [CLI, 'sort', '--dry-run'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NCM_SORTER_NCM_ENTRY: FAKE_NCM,
+        NCM_SORTER_CACHE_HOME: cacheHome,
+        NCM_SORTER_FAKE_NO_KEY: '1',
+      },
+    });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('API key 未设置');
+  });
 });

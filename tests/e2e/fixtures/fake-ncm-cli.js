@@ -95,6 +95,13 @@ function out(obj) {
 
 const sub = subcommands.join(' ');
 
+// 模拟未配置 API key:环境变量 NCM_SORTER_FAKE_NO_KEY=1 时,
+// user favorite 以退出码 1 + stderr 文案复现真实 ncm-cli 行为
+if (process.env.NCM_SORTER_FAKE_NO_KEY === '1') {
+  process.stderr.write('[错误] API key 未设置，请通过以下方式之一配置：\n  - 运行 ncm-cli configure 进行交互式配置\n');
+  process.exit(1);
+}
+
 if (sub === 'user favorite') {
   out({ code: 200, data: FAVORITE });
 }
