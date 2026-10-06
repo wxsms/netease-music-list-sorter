@@ -10,6 +10,18 @@
 要求 Node.js 18+。
 
 ```bash
+npm install -g ncm-sorter
+```
+
+或免安装直接运行:
+
+```bash
+npx ncm-sorter
+```
+
+### 从源码运行
+
+```bash
 git clone https://github.com/wxsms/netease-music-list-sorter.git
 cd netease-music-list-sorter
 npm install
