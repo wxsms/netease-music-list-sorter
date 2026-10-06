@@ -26,7 +26,7 @@ jest.mock('fs', () => {
   };
 });
 
-const { runNcm, NcmError, resolveNcmEntry, loginInteractive, checkLogin } = require('../src/ncm.js');
+const { runNcm, NcmError, resolveNcmEntry, loginInteractive, checkLogin, isApiKeyMissing } = require('../src/ncm.js');
 
 beforeEach(() => {
   childProcess.spawnSync.mockReset();
@@ -110,6 +110,34 @@ describe('runNcm', () => {
     expect(e.name).toBe('NcmError');
     expect(e.message).toBe('msg');
     expect(e.detail).toBe('detail');
+  });
+});
+
+describe('isApiKeyMissing', () => {
+  test('exit 错误且 detail 含「API key 未设置」→ true', () => {
+    const e = new NcmError('exit', 'ncm-cli 退出码 1', '[错误] API key 未设置，请通过以下方式之一配置：\n  - 运行 ncm-cli configure 进行交互式配置');
+    expect(isApiKeyMissing(e)).toBe(true);
+  });
+
+  test('detail 为 stdout 场景(含相同文案)→ true', () => {
+    // detail 是 (stderr || stdout).slice(0,500),两种来源都可能出现
+    const e = new NcmError('exit', 'ncm-cli 退出码 1', 'API key 未设置');
+    expect(isApiKeyMissing(e)).toBe(true);
+  });
+
+  test('exit 错误但 detail 是其它文案(未登录等)→ false', () => {
+    const e = new NcmError('exit', 'ncm-cli 退出码 1', '登录已过期,请重新登录');
+    expect(isApiKeyMissing(e)).toBe(false);
+  });
+
+  test('spawn / parse 错误 → false', () => {
+    expect(isApiKeyMissing(new NcmError('spawn', '无法启动', ''))).toBe(false);
+    expect(isApiKeyMissing(new NcmError('parse', '解析失败', 'API key 未设置'))).toBe(false);
+  });
+
+  test('非 NcmError → false', () => {
+    expect(isApiKeyMissing(new Error('API key 未设置'))).toBe(false);
+    expect(isApiKeyMissing(null)).toBe(false);
   });
 });
 

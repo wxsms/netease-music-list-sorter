@@ -178,4 +178,18 @@ function checkLogin() {
   return runNcm(['login', '--check']);
 }
 
-module.exports = { runNcm, runNcmAsync, NcmError, resolveNcmEntry, loginInteractive, checkLogin };
+/**
+ * 判断错误是否为「API key 未配置」场景。
+ *
+ * ncm-cli 未配置 appId/privateKey 时,所有命令(含 login --check)以退出码 1
+ * 结束并在 stderr 打印「API key 未设置」;detail 承载 (stderr||stdout).slice(0,500)。
+ * 用文案匹配而非退出码区分,避免与其它 exit 错误(未登录/网络)混淆。
+ */
+function isApiKeyMissing(e) {
+  return e instanceof NcmError
+    && e.kind === 'exit'
+    && typeof e.detail === 'string'
+    && e.detail.includes('API key 未设置');
+}
+
+module.exports = { runNcm, runNcmAsync, NcmError, resolveNcmEntry, loginInteractive, checkLogin, isApiKeyMissing };
