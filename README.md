@@ -17,6 +17,16 @@ npm install
 
 无需其它准备:首次运行时如果未登录,工具会直接在终端显示二维码,用网易云音乐 App 扫码即可。
 
+## 前置准备：配置 API 凭证
+
+本工具基于网易云音乐开放平台 API，首次使用需要配置凭证：
+
+1. 前往[网易云音乐开放平台](https://developer.music.163.com/st/developer/apply/account?type=INDIVIDUAL)入驻（个人类型即可）
+2. 在控制台获取 **App ID** 和 **Private Key**
+3. 运行 `npm start`，工具会在检测到未配置时引导你输入并保存（也可以手动执行 `npx @music163/ncm-cli configure`）
+
+凭证只需配置一次，保存在本机 `~/.config/ncm-cli/`。
+
 ## 使用
 
 ```bash
