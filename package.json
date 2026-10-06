@@ -1,17 +1,42 @@
 {
-  "name": "netease-music-list-sorter",
-  "version": "1.0.0",
-  "description": "按\"专辑优先 + 艺人首次出现\"规则重排网易云音乐歌单的 CLI 工具",
-  "private": true,
+  "name": "ncm-sorter",
+  "version": "0.0.1",
+  "description": "按\"专辑优先 + 艺人首次出现\"等规则重排网易云音乐歌单的 CLI 工具(ncm-cli 驱动)",
+  "bin": {
+    "ncm-sorter": "cli.js"
+  },
+  "files": [
+    "cli.js",
+    "src",
+    "README.md"
+  ],
+  "author": "wxsms",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wxsms/netease-music-list-sorter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wxsms/netease-music-list-sorter/issues"
+  },
+  "homepage": "https://github.com/wxsms/netease-music-list-sorter#readme",
+  "keywords": [
+    "netease",
+    "music",
+    "playlist",
+    "sorter",
+    "ncm",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node cli.js",
     "lint": "eslint .",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "openspec:validate": "openspec validate --all --strict && openspec validate --archived"
-  },
-  "engines": {
-    "node": ">=18"
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
