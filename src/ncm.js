@@ -192,4 +192,15 @@ function isApiKeyMissing(e) {
     && e.detail.includes('API key 未设置');
 }
 
-module.exports = { runNcm, runNcmAsync, NcmError, resolveNcmEntry, loginInteractive, checkLogin, isApiKeyMissing };
+/**
+ * 写入一条 ncm-cli 配置(`config set <key> <value>`)。
+ * 返回是否成功;失败由调用方决定提示与流程。
+ */
+function setConfig(key, value) {
+  const res = spawnSync(NCM_CMD[0], [...NCM_CMD.slice(1), 'config', 'set', key, String(value)], {
+    encoding: 'utf8',
+  });
+  return res.error == null && res.status === 0;
+}
+
+module.exports = { runNcm, runNcmAsync, NcmError, resolveNcmEntry, loginInteractive, checkLogin, isApiKeyMissing, setConfig };

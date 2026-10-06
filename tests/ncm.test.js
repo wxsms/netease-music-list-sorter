@@ -26,7 +26,7 @@ jest.mock('fs', () => {
   };
 });
 
-const { runNcm, NcmError, resolveNcmEntry, loginInteractive, checkLogin, isApiKeyMissing } = require('../src/ncm.js');
+const { runNcm, NcmError, resolveNcmEntry, loginInteractive, checkLogin, isApiKeyMissing, setConfig } = require('../src/ncm.js');
 
 beforeEach(() => {
   childProcess.spawnSync.mockReset();
@@ -138,6 +138,30 @@ describe('isApiKeyMissing', () => {
   test('非 NcmError → false', () => {
     expect(isApiKeyMissing(new Error('API key 未设置'))).toBe(false);
     expect(isApiKeyMissing(null)).toBe(false);
+  });
+});
+
+describe('setConfig', () => {
+  test('调用 ncm-cli config set <key> <value> 且不追加 --output json', () => {
+    childProcess.spawnSync.mockReturnValue({ status: 0, stdout: '✓ 已设置 appId = x', stderr: '' });
+    setConfig('appId', 'my-app-id');
+    const [cmd, args] = childProcess.spawnSync.mock.calls[0];
+    expect(cmd).toBeTruthy();
+    expect(args).toContain('config');
+    expect(args).toContain('set');
+    expect(args).toContain('appId');
+    expect(args).toContain('my-app-id');
+    expect(args).not.toContain('--output'); // config set 是纯文本输出,不解析 JSON
+  });
+
+  test('成功(退出码 0)返回 true', () => {
+    childProcess.spawnSync.mockReturnValue({ status: 0, stdout: '✓ 已设置', stderr: '' });
+    expect(setConfig('privateKey', 'key123')).toBe(true);
+  });
+
+  test('失败(非零退出码)返回 false', () => {
+    childProcess.spawnSync.mockReturnValue({ status: 1, stdout: '', stderr: 'boom' });
+    expect(setConfig('appId', 'x')).toBe(false);
   });
 });
 
