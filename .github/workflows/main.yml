@@ -72,7 +72,10 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      - run: npm audit --audit-level moderate
+      # 只审计生产依赖:braces/sprintf-js 的 advisory 暂无补丁版本(全部已发布
+      # 版本受影响),dev 依赖链(jest/openspec)的告警无法通过升级消除;
+      # 上游发补丁后可去掉 --omit=dev 恢复全量审计
+      - run: npm audit --omit=dev --audit-level moderate
 
   openspec:
     # 规格与归档变更校验(与本地 openspec validate 一致)
