@@ -18,6 +18,10 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+      # runner 自带的 npm 10.x 不支持 Trusted Publishing 的 OIDC 握手,
+      # 会静默回退匿名请求并被 registry 以误导性 404 拒绝(npm/cli#9088),
+      # 必须升级到 npm >= 11.5.1
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run lint
       - run: npm test
