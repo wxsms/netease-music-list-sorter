@@ -46,7 +46,7 @@
   "overrides": {
     "ffprobe-static": "file:stubs/ffprobe-static",
     "build": "file:stubs/build",
-    "image-size": "2.0.4"
+    "image-size": "2.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
